@@ -1,0 +1,11 @@
+# Conda-omgeving voor AHNProfielCreator: conda env create -f environment.yml
+name: ahnprofielcreator
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.11
+  - fiona
+  - numpy
+  - rasterio
+  - shapely>=2
+  - tqdm

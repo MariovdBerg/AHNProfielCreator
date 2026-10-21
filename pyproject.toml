@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ahnprofielcreator"
+version = "0.1.0"
+description = "Genereer AHN profielen (dwarslijnen met hoogtes) langs een traject, per dijkvak"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fiona",
+    "numpy",
+    "rasterio",
+    "shapely>=2",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+schem = ["rdp"]  # alleen voor profielen.SchemProfile
+
+[project.scripts]
+ahn-profielen = "ahnprofielcreator.profielen_per_vak:main"
+ahn-profielen-app = "ahnprofielcreator.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"ahnprofielcreator.app" = ["static/*", "static/vendor/leaflet/*", "static/vendor/leaflet/images/*"]

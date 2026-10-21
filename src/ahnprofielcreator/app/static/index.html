@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AHN Profielen</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>AHN Profielen</h1>
+
+    <section>
+      <h2>Instellingen</h2>
+      <form id="settings-form" autocomplete="off">
+        <div id="fields-main"></div>
+        <details>
+          <summary>Geavanceerd</summary>
+          <div id="fields-advanced"></div>
+        </details>
+        <div class="buttons">
+          <button type="submit" id="btn-apply">Toepassen</button>
+          <button type="button" id="btn-run" class="primary">Berekening starten</button>
+        </div>
+      </form>
+      <div id="run-status" class="status" hidden></div>
+      <pre id="run-log" hidden></pre>
+    </section>
+
+    <section>
+      <h2>Bestanden</h2>
+      <ul id="files" class="files"></ul>
+    </section>
+
+    <section>
+      <h2>Kaart</h2>
+      <label class="row">Dwarslijnen kleuren
+        <select id="color-mode">
+          <option value="vak">per vak</option>
+          <option value="nodata">op AHN-dekking</option>
+        </select>
+      </label>
+      <label class="row">Ga naar vak
+        <select id="vak-select"><option value="">–</option></select>
+      </label>
+      <div id="legend"></div>
+      <ul id="counts" class="counts"></ul>
+    </section>
+  </aside>
+
+  <main>
+    <div id="map"></div>
+    <section id="profile-panel">
+      <header>
+        <button type="button" id="btn-prev" title="Vorig profiel (←)">◀</button>
+        <button type="button" id="btn-next" title="Volgend profiel (→)">▶</button>
+        <span id="profile-title">Klik op een dwarslijn in de kaart om het profiel te zien.</span>
+        <label class="toggle"><input type="checkbox" id="show-others" checked> andere profielen in vak</label>
+      </header>
+      <div id="chart"></div>
+      <div id="chart-tip" hidden></div>
+    </section>
+  </main>
+
+  <script src="/static/vendor/leaflet/leaflet.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
