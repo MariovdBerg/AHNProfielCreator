@@ -26,7 +26,7 @@ import os
 import sys
 from typing import Optional
 
-from . import ahn
+from . import ahn, buitenlijn
 from .profielen import CrossSectionHeights, CrossSections
 
 
@@ -40,6 +40,9 @@ class Settings:
     ahn_file_loc: str
     # Shapefile met buitenlijn, bepaalt de oriëntatie van de dwarslijnen (optioneel)
     input_line_outside: Optional[str] = None
+    # Zonder buitenlijn: leid die af door de dijkvakken zoveel meter te verschuiven (0 = niet afleiden)
+    outside_offset: float = 0.0
+    outside_side: str = "links"  # Kant van de buitenlijn t.o.v. de lijnrichting: links of rechts
     group_id: str = "vak_id"  # Attribuut in shape om te groeperen
     # Nodige AHN informatie
     ahn_file_downloaded: Optional[str] = None  # Map voor gedownloade bladen; standaard ahn_file_loc
@@ -69,10 +72,17 @@ class Settings:
     def output_cross_ahn(self):
         return os.path.join(self.output_dir, OUTPUT_CROSS_AHN)
 
+    @property
+    def outside_line(self):
+        return outside_line(
+            self.cur_dir, self.interval_length, self.input_line_outside, self.outside_offset
+        )
+
 
 OUTPUT_POINTS = "cross_points.shp"
 OUTPUT_CROSS = "cross_lines.shp"
 OUTPUT_CROSS_AHN = "cross_lines_ahn.shp"
+OUTPUT_OUTSIDE = "buitenlijn_offset.shp"
 
 # Vervallen instellingen: de bestandsnamen komen nu uit de downloadlinks in de kaartbladindex.
 REMOVED_SETTINGS = ("ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform")
@@ -81,6 +91,47 @@ REMOVED_SETTINGS = ("ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform")
 def output_dir(cur_dir, interval_length):
     """Outputmap binnen de werkmap, per interval (zoals in het notebook)."""
     return os.path.join(cur_dir, f"output_per_vak_{float(interval_length):g}m")
+
+
+def outside_line(cur_dir, interval_length, input_line_outside, outside_offset):
+    """
+    Buitenlijn die de berekening gebruikt: de opgegeven shapefile, anders de uit de dijkvakken
+    afgeleide lijn in de outputmap (als `outside_offset` > 0), anders geen.
+    """
+    if input_line_outside:
+        return input_line_outside
+    if outside_offset and float(outside_offset) > 0 and cur_dir:
+        return os.path.join(output_dir(cur_dir, interval_length), OUTPUT_OUTSIDE)
+    return None
+
+
+def make_outside_line(settings, logger=None):
+    """
+    Leid de buitenlijn af uit de dijkvakken als er geen buitenlijn is opgegeven en `outside_offset` > 0.
+
+    Geeft het pad van de afgeleide buitenlijn terug, of None als die niet nodig is.
+    """
+    logger = logger or get_logger()
+    if not settings.outside_offset:
+        return None
+    if settings.input_line_outside:
+        logger.warning("Er is een buitenlijn opgegeven; de afstand voor een afgeleide buitenlijn wordt genegeerd.")
+        return None
+    if settings.outside_offset >= settings.cross_length / 2:
+        raise ValueError(
+            f"Afstand van de afgeleide buitenlijn ({settings.outside_offset:g} m) moet kleiner zijn dan de halve "
+            f"lengte van de dwarslijn ({settings.cross_length / 2:g} m), anders snijden de dwarslijnen hem niet."
+        )
+    os.makedirs(settings.output_dir, exist_ok=True)
+    path = settings.outside_line
+    count = buitenlijn.offset_lines_to_file(
+        settings.input_line, path, settings.outside_offset, settings.outside_side
+    )
+    logger.info(
+        f"Buitenlijn afgeleid: dijkvakken {settings.outside_offset:g} m naar {settings.outside_side} "
+        f"verschoven ({count} lijnen), '{path}'."
+    )
+    return path
 
 
 def get_logger():
@@ -108,13 +159,14 @@ def run(settings):
         logger=logger,
     )
     os.makedirs(settings.output_dir, exist_ok=True)
+    make_outside_line(settings, logger)
 
     # Initialize class voor intervalpunten en bijbehorende dwarslijnen.
     cs = CrossSections(
         settings.input_line,
         settings.output_points,
         group_id=settings.group_id,
-        outside_line_file=settings.input_line_outside,
+        outside_line_file=settings.outside_line,
         logger=logger,
     )
 
@@ -189,6 +241,16 @@ def parse_args(argv=None):
     parser.add_argument("--cur-dir", help="werkmap voor opslaan van de output")
     parser.add_argument("--input-line", help="shapefile met dijkvak lijnen")
     parser.add_argument("--input-line-outside", help="shapefile met buitenlijn (oriëntatie dwarslijnen)")
+    parser.add_argument(
+        "--outside-offset",
+        type=float,
+        help="[m] zonder buitenlijn: leid die af door de dijkvakken zoveel te verschuiven (standaard: 0 = niet)",
+    )
+    parser.add_argument(
+        "--outside-side",
+        choices=buitenlijn.ZIJDEN,
+        help="kant van de afgeleide buitenlijn t.o.v. de lijnrichting (standaard: links)",
+    )
     parser.add_argument("--group-id", help="attribuut in shape om te groeperen (standaard: vak_id)")
     parser.add_argument("--ahn-index", help="AHN kaartbladen met downloadlinks (standaard: bladwijzer.gpkg)")
     parser.add_argument("--ahn-index-id", help="attribuut met bladnaam in de kaartbladen (standaard: AHN)")

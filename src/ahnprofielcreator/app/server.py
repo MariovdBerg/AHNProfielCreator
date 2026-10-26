@@ -127,7 +127,12 @@ class State:
     def paths(self):
         paths = {
             "vakken": self.value("input_line"),
-            "buitenlijn": self.value("input_line_outside"),
+            "buitenlijn": ppv.outside_line(
+                self.value("cur_dir"),
+                self.value("interval_length"),
+                self.value("input_line_outside"),
+                self.value("outside_offset"),
+            ),
             "punten": None,
             "dwarslijnen": None,
             "profielen": None,
@@ -154,6 +159,21 @@ class State:
         paths = self.paths()
         files = {k: {"path": p, "exists": bool(p) and os.path.isfile(p)} for k, p in paths.items()}
         return {"fields": fields, "files": files}
+
+    def make_outside_line(self, force=False):
+        """
+        Leid de buitenlijn af (zonder AHN-berekening), zodat die direct op de kaart te controleren is.
+
+        Zonder `force` alleen als het bestand nog ontbreekt.
+        """
+        if self.value("input_line_outside") or not self.value("outside_offset"):
+            return
+        if not self.value("cur_dir") or not self.value("input_line") or not os.path.isfile(self.value("input_line")):
+            return
+        if not force and os.path.isfile(self.paths()["buitenlijn"]):
+            return
+        settings = {"ahn_file_loc": "", **self.settings}
+        ppv.make_outside_line(ppv.Settings(**settings))
 
     # ---------- Shapefiles lezen ----------
 
@@ -187,6 +207,10 @@ class State:
         }
 
     def layers(self):
+        try:
+            self.make_outside_line()
+        except ValueError:
+            pass  # Foute instelling: de melding komt bij Toepassen of de berekening, de kaart laadt wel.
         paths = self.paths()
         group = self.value("group_id")
         layers = {}
@@ -258,7 +282,7 @@ class State:
                 }
             )
         result.sort(key=lambda p: p["id"])
-        return {"vak": vak, "outside": bool(self.value("input_line_outside")), "profiles": result}
+        return {"vak": vak, "outside": bool(self.paths()["buitenlijn"]), "profiles": result}
 
     # ---------- Berekening draaien ----------
 
@@ -332,6 +356,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         def update_settings():
             self.state.settings = clean_settings(body)
+            self.state.make_outside_line(force=True)
             return self.state.settings_info()
 
         def start_run():

@@ -6,6 +6,8 @@ const LABELS = {
   cur_dir: "Werkmap (output)",
   input_line: "Dijkvakken (lijnen .shp)",
   input_line_outside: "Buitenlijn (.shp)",
+  outside_offset: "Of: buitenlijn afleiden, afstand [m]",
+  outside_side: "Kant afgeleide buitenlijn",
   ahn_index: "AHN bladen (.gpkg/.shp)",
   ahn_file_loc: "AHN .TIF-bestanden (map)",
   ahn_file_downloaded: "AHN downloadmap",
@@ -20,7 +22,7 @@ const LABELS = {
 };
 // Categorieën in het instellingenpaneel, in deze volgorde; onbekende velden komen bij de bronnen.
 const GROUPS = {
-  bronnen: ["cur_dir", "input_line", "input_line_outside", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
+  bronnen: ["cur_dir", "input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
   ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
   dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
 };
@@ -29,6 +31,7 @@ const OPTIONS = {
   ahn_versie: ["5", "4", "3", "2", "1"],
   model: ["DTM", "DSM"],
   model_resolutie: ["0.5", "5"],
+  outside_side: ["links", "rechts"],
 };
 const FILE_LABELS = {
   vakken: "Dijkvakken",

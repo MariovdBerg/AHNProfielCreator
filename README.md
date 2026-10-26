@@ -37,6 +37,23 @@ waarschuwing genegeerd.
 
 ## Gebruik
 
+### Buitenlijn
+
+De buitenlijn bepaalt alleen aan welke kant van de dijklijn de buitenzijde ligt: dwarslijnen worden
+zo gedraaid dat ze aan de buitenkant beginnen. Heeft de buitenlijn het vak-attribuut (`group_id`),
+dan wordt per vak de eigen buitenlijn gebruikt. Zonder buitenlijn blijft de richting van de
+dwarslijnen onbepaald.
+
+Heb je geen buitenlijn, dan kan de app die afleiden uit de dijkvakken (zoals "Offset Curves" in QGIS):
+laat `input_line_outside` leeg en zet `outside_offset` op een afstand in meters, bijv. `5`. De
+dijkvakken worden dan zoveel naar links of rechts (`outside_side`) van hun tekenrichting verschoven en
+weggeschreven als `buitenlijn_offset.shp` in de outputmap. Let op:
+
+- De afstand moet kleiner zijn dan de halve `cross_length`, anders snijden de dwarslijnen de lijn niet.
+- Links/rechts is ten opzichte van de richting waarin elk dijkvak getekend is. Zijn de vakken niet
+  allemaal in dezelfde richting getekend, dan ligt de afgeleide buitenlijn bij sommige vakken aan de
+  verkeerde kant. Controleer dat op de kaart in de webapp (de lijn verschijnt na *Toepassen*).
+
 ### Benodigde AHN-data
 
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app
@@ -113,6 +130,8 @@ run(Settings(
     cur_dir=r"...\profiel_shapes",
     input_line=r"...\WAD_GEKB_basisanalyse_profielen_v2.shp",
     input_line_outside=r"...\WAD_GEKB_basisanalyse_profielen_v2_outsideline.shp",
+    outside_offset=0.0,  # of: input_line_outside=None en bijv. 5 m om de buitenlijn af te leiden
+    outside_side="links",
     group_id="vak_id",
     ahn_file_loc=r"...\ahn_data",  # lokale tiffs
     ahn_file_downloaded=None,  # map voor downloads; None = ahn_file_loc
