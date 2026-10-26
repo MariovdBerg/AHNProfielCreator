@@ -526,13 +526,8 @@ class CrossSectionHeights:
         self,
         crosssections_file,
         group_id=None,
-        ahn_index=None,
-        ahn_index_id=None,
-        ahn_loc=None,
+        ahn_tiles=None,
         ahn_stepsize=0.5,
-        ahn_file_transform="lower",
-        ahn_file_prefix="m_",
-        ahn_file_suffix="_deflate",
         lines_file=None,
         lines_id=None,
         lines_tolerance=1e-8,
@@ -553,14 +548,9 @@ class CrossSectionHeights:
             self.lines_filter_col = lines_filter_col
             self.lines_filter_val = lines_filter_val
 
-        # AHN
-        self.ahn_index = ahn_index
-        self.ahn_index_id = ahn_index_id
-        self.ahn_loc = ahn_loc
+        # AHN (ahnprofielcreator.ahn.AHNTiles: kaartbladen en lokale/gedownloade tiffs)
+        self.ahn_tiles = ahn_tiles
         self.ahn_stepsize = ahn_stepsize
-        self.ahn_file_transform = ahn_file_transform
-        self.ahn_file_prefix = ahn_file_prefix
-        self.ahn_file_suffix = ahn_file_suffix
 
         # 3D lines file
         self.lines_file = lines_file
@@ -710,25 +700,6 @@ class CrossSectionHeights:
 
         return match
 
-    def process_ahn_index_and_files(self):
-        self.logger.info(f"Processing AHN index '{self.ahn_index}' for column '{self.ahn_index_id}'...")
-
-        ahn_index_data, ahn_index_id = None, None
-        with fiona.open(self.ahn_index, "r") as source:
-            ahn_index_data, ahn_index_id = [], []
-            for row in source:
-                if row is not None:
-                    prep = shapely.prepared.prep(shapely.geometry.shape(row["geometry"]))
-                    ahn_index_data.append(prep)
-                    ahn_index_id.append(row["properties"][self.ahn_index_id])
-
-        ahn_file_index = {}
-        for file in os.listdir(self.ahn_loc):
-            if file.lower().endswith(".tif") and os.path.isfile(os.path.join(self.ahn_loc, file)):
-                ahn_file_index[file.lower()] = os.path.join(self.ahn_loc, file)
-
-        return ahn_index_data, ahn_index_id, ahn_file_index
-
     @staticmethod
     def find_raster_height(dataset, heights, geom, nodata):
         height = nodata
@@ -740,65 +711,39 @@ class CrossSectionHeights:
 
         return shapely.geometry.Point(geom.x, geom.y, height)
 
-    @staticmethod
-    def get_ahn_files(
-        lines, index_data, index_id, ahn_file_index, ahn_file_transform, ahn_file_prefix, ahn_file_suffix
-    ):
-        # Get the unique indices of the required ahn layers.
-        mls = shapely.geometry.MultiLineString(lines)
-        needed_ahn = [i for g, i in zip(index_data, index_id) if g.intersects(mls)]
-        needed_ahn = [x for x in list(set(needed_ahn)) if x is not None]
-
-        valid_ahn = []
-        for ahn in needed_ahn:
-            if ahn_file_transform is not None:
-                ahn = getattr(str, ahn_file_transform)(ahn)
-            ahn = f"{ahn_file_prefix}{ahn}{ahn_file_suffix}.tif"
-
-            if ahn not in ahn_file_index:
-                valid_ahn.append(None)
-            else:
-                valid_ahn.append(ahn_file_index[ahn])
-
-        return needed_ahn, valid_ahn
-
     def crosssections_height_ahn(self, dry_run=False):
-        # Process the index shape.
-        index_data, index_id, file_index = self.process_ahn_index_and_files()
-
         ahn_map = {}
         total_lines = 0
+        all_lines = []
         for ckey, lines in self.cross_lines.items():
             total_lines += len(lines)
+            all_lines += lines
 
-            needed_ahn, valid_ahn = self.get_ahn_files(
-                lines,
-                index_data,
-                index_id,
-                file_index,
-                self.ahn_file_transform,
-                self.ahn_file_prefix,
-                self.ahn_file_suffix,
-            )
-
-            # Keep track which ckeys correspond to which ahn file
-            for n_ahn, v_ahn in zip(needed_ahn, valid_ahn):
+            # Keep track which ckeys correspond to which ahn sheet
+            for n_ahn in self.ahn_tiles.sheet_names(lines):
                 if n_ahn not in ahn_map:
-                    ahn_map[n_ahn] = {"valid": v_ahn, "colkeys": []}
+                    ahn_map[n_ahn] = {"valid": None, "colkeys": []}
                 ahn_map[n_ahn]["colkeys"].append(ckey)
 
         ahn_files = ", ".join(ahn_map.keys())
         self.logger.info(f"Finding heights for {total_lines} line(s) in {len(ahn_map)} AHN raster file(s): {ahn_files}...")
+        if all_lines:
+            self.ahn_tiles.report_ahn6(all_lines)
 
         if dry_run:
             self.logger.info("DRY RUN MODE, returning list of required AHN tiles")
             return ahn_map
 
+        # Find local AHN files, download the missing ones.
+        for n_ahn, ahndict in ahn_map.items():
+            ahndict["valid"] = self.ahn_tiles.file(n_ahn)
+
         cross_heights = collections.OrderedDict()
         for ahn_index, ahndict in tqdm.tqdm(ahn_map.items(), desc="Finding heights in AHN raster files"):
             # Validate the ahn file
             if ahndict["valid"] is None:
-                self.logger.warning(f"Could not find a valid file for AHN index {ahn_index}")
+                # AHNTiles has already warned about this sheet.
+                self.logger.debug(f"Could not find a valid file for AHN index {ahn_index}")
                 continue
 
             # Create points along the line with the user-supplied stepsize
@@ -824,6 +769,14 @@ class CrossSectionHeights:
                                 point = self.find_raster_height(dataset, ahn_raster, point, self.nodata)
                                 cross_heights[ckey][i][j] = point
                             pbar.update(1)
+
+        # Lines without any AHN file get points without heights.
+        for ckey, lines in self.cross_lines.items():
+            if ckey not in cross_heights:
+                cross_heights[ckey] = []
+                for line in lines:
+                    steps = range(0, math.ceil(round(line.length, 2) / self.ahn_stepsize) + 1)
+                    cross_heights[ckey].append([line.interpolate(s * self.ahn_stepsize) for s in steps])
 
         # Convert each list of points to a linestring.
         self.logger.debug("Converting lists of points to linestrings...")
@@ -917,12 +870,8 @@ class CrossSectionHeights:
         self.process_crosssections()
 
         if method.lower() == "ahn":
-            if self.ahn_index is None:
-                raise ValueError("Location of AHN3 index is not supplied (ahn_index)")
-            if self.ahn_index_id is None:
-                raise ValueError("Index Field for AHN3 files is not supplied (ahn_index_id)")
-            if self.ahn_loc is None:
-                raise ValueError("Location of AHN3 raster files is not supplied (ahn_loc)")
+            if self.ahn_tiles is None:
+                raise ValueError("AHN tiles are not supplied (ahn_tiles)")
             return self.crosssections_height_ahn(dry_run=dry_run)
 
         if method.lower() == "lines":

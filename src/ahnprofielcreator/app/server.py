@@ -63,8 +63,8 @@ def clean_settings(raw):
             value = value.strip().strip('"').strip()
         if value is None or value == "":
             continue
-        if field.type is float:
-            value = float(value)
+        if field.type in (int, float):
+            value = field.type(value)
         settings[name] = value
     return settings
 
@@ -116,7 +116,7 @@ class State:
                     "value": self.settings.get(name),
                     "default": _default(name),
                     "required": field.default is dataclasses.MISSING,
-                    "number": field.type is float,
+                    "number": field.type in (int, float),
                 }
             )
         paths = self.paths()

@@ -14,7 +14,7 @@ geïnstalleerd te zijn. `SchemProfile` heeft daarnaast het pakket `rdp` nodig (`
 
 ## Installatie
 
-Maak eenmalig de conda-omgeving aan (fiona, rasterio, shapely, numpy, tqdm):
+Maak eenmalig de conda-omgeving aan (certifi, fiona, rasterio, shapely, numpy, tqdm):
 
 ```bash
 conda env create -f environment.yml
@@ -31,9 +31,69 @@ pip install -e .
 
 Kopieer `config.example.ini` naar `config.ini` en pas de paden aan. Alle instellingen staan in de
 sectie `[profielen]`; paden schrijf je zonder aanhalingstekens en een lege waarde betekent de
-standaardwaarde. Commentaar begint met `;`.
+standaardwaarde. Commentaar begint met `;`. De instellingen `ahn_file_prefix`, `ahn_file_suffix` en
+`ahn_file_transform` bestaan niet meer; staan ze nog in een oud `config.ini`, dan worden ze met een
+waarschuwing genegeerd.
 
 ## Gebruik
+
+### Benodigde AHN-data
+
+De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app
+zelf; je hoeft alleen een map op te geven (`ahn_file_loc`, en eventueel `ahn_file_downloaded`).
+
+1. **Kaartbladindex** (`ahn_index`, standaard `bladwijzer.gpkg` in de projectmap): de bladwijzer
+   van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
+   ([bron](https://basisdata.nl/hwh-ahn/AUX/bladwijzer.gpkg),
+   [kaart](https://basisdata.nl/hwh-ahn/AUX/bladwijzer/index.html)). De bladnaam staat in
+   attribuut `AHN` (`ahn_index_id`). Een eigen index (.gpkg of .shp, RD New) mag ook, als die
+   dezelfde velden heeft.
+2. **Map met AHN tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs.
+3. **Map voor downloads** (`ahn_file_downloaded`, optioneel): hier komen gedownloade bladen en hier
+   wordt ook gezocht. Leeg = `ahn_file_loc`. Handig als `ahn_file_loc` alleen-lezen is (bijv. op P:)
+   of als je er geen downloads in wilt.
+
+Werkwijze per kaartblad dat de dwarslijnen raakt:
+
+1. Zoek in `ahn_file_loc` en `ahn_file_downloaded` de tiff met de naam uit de downloadlink, bijv. `2023_M_01CZ1.TIF` (AHN5)
+   of `M_01CZ1.TIF` (AHN4, uit `M_01CZ1.zip`). Hoofd-/kleine letters maken niet uit en een extra
+   achtervoegsel mag, zodat ook `M_01CZ1_DEFLATE.tif` gevonden wordt.
+2. Niet gevonden: download het blad naar `ahn_file_downloaded` (AHN4-zips worden uitgepakt). Bij 0,5 m is dat ~200 MB per blad.
+3. Heeft het blad geen (werkende) link voor de gekozen versie, dan valt de app terug op AHN4, dat
+   heel Nederland dekt. AHN5 wordt sinds 2023 in drie jaar ingewonnen
+   ([voortgang](https://www.ahn.nl/voortgang-ahn5-2023)). De terugval staat als waarschuwing in de log.
+
+Het product kies je met:
+
+| Instelling | Standaard | Mogelijk |
+|---|---|---|
+| `ahn_versie` | `5` | 1 t/m 5 (met terugval op 4 voor versies boven 4) |
+| `model` | `DTM` | `DTM` (maaiveld) of `DSM` (oppervlakte) |
+| `model_resolutie` | `0.5` | `0.5` of `5` [m] |
+
+Bladen zonder tiff worden met een waarschuwing overgeslagen; in de webapp kun je de dwarslijnen op
+AHN-dekking kleuren om dat te zien. De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New
+staan. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
+
+**AHN6** gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg`
+in de projectmap controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
+de log; voor de berekening gebruikt de app AHN6 (nog) niet.
+
+**Binnen HKV** staan AHN5 en AHN4 (DTM 0,5 m) op `P:\OpenData\AHN\AHN5\DTM05` en
+`P:\OpenData\AHN\AHN4\DTM05`. Die namen worden herkend. Gebruik je zo'n map als `ahn_file_loc`,
+zet dan `ahn_file_downloaded` op een eigen map, zodat ontbrekende bladen (bijv. de AHN4-terugval)
+niet op P: terechtkomen:
+
+```ini
+ahn_file_loc = P:\OpenData\AHN\AHN5\DTM05
+ahn_file_downloaded = ahn_data
+```
+
+Licentie: AHN1 t/m AHN4 vallen onder CC0, AHN5 en later onder CC BY 4.0 (bronvermelding: AHN).
+De downloads gebruiken de certificaten van `certifi`, omdat de Windows-certificaatopslag een
+verlopen tussencertificaat kan bevatten; lukt dat niet, dan die van Windows.
+
+### Uitvoeren
 
 Commandline:
 
@@ -54,16 +114,16 @@ run(Settings(
     input_line=r"...\WAD_GEKB_basisanalyse_profielen_v2.shp",
     input_line_outside=r"...\WAD_GEKB_basisanalyse_profielen_v2_outsideline.shp",
     group_id="vak_id",
-    ahn_index=r"P:\OpenData\AHN\Kaartbladen_AHN5_HKV.shp",
-    ahn_file_loc=r"P:\OpenData\AHN\AHN5\DTM05",
+    ahn_file_loc=r"...\ahn_data",  # lokale tiffs
+    ahn_file_downloaded=None,  # map voor downloads; None = ahn_file_loc
+    ahn_versie=5,  # standaard; terugval op AHN4
+    model="DTM",
+    model_resolutie=0.5,
     interval_length=10,
     cross_length=100.0,
     ahn_stepsize=0.5,
 ))
 ```
-
-AHN tiff-files moeten heten `{ahn_file_prefix}{bladnaam in kleine letters}{ahn_file_suffix}.tif`
-(standaard `m_<blad>_deflate.tif`).
 
 ## Webapp
 
@@ -93,6 +153,7 @@ Andere poort: `--port`. Na `pip install -e .` werkt ook `ahn-profielen-app --con
   *Berekening starten* voert alle stappen uit en laadt daarna het resultaat.
 
 De app gebruikt alleen de standaardbibliotheek en fiona. Leaflet staat in
-`src/ahnprofielcreator/app/static/vendor/leaflet`. Alleen de achtergrondkaarten (BRT, luchtfoto,
-AHN) komen van internet, via PDOK; zonder internet werkt de app ook, maar zonder achtergrond.
+`src/ahnprofielcreator/app/static/vendor/leaflet`. Van internet komen de achtergrondkaarten (BRT,
+luchtfoto, AHN, via PDOK) en, tijdens de berekening, ontbrekende AHN-kaartbladen (via basisdata.nl).
+Zonder internet werkt de app ook, maar zonder achtergrond en alleen met tiffs die al lokaal staan.
 De app is alleen bereikbaar vanaf de eigen computer (127.0.0.1).

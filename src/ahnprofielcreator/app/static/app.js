@@ -6,18 +6,19 @@ const LABELS = {
   cur_dir: "Werkmap (output)",
   input_line: "Dijkvakken (lijnen .shp)",
   input_line_outside: "Buitenlijn (.shp)",
-  ahn_index: "AHN kaartbladen (.shp)",
+  ahn_index: "AHN kaartbladen (.gpkg/.shp)",
   ahn_file_loc: "Map met AHN tiffs",
+  ahn_file_downloaded: "Map voor AHN-downloads",
   group_id: "Attribuut vak-id",
   ahn_index_id: "Attribuut bladnaam",
   interval_length: "Interval [m]",
   cross_length: "Lengte dwarslijn [m]",
   ahn_stepsize: "Stapgrootte AHN [m]",
-  ahn_file_prefix: "Prefix AHN tiff",
-  ahn_file_suffix: "Suffix AHN tiff",
-  ahn_file_transform: "Bladnaam omzetten (lower/upper)",
+  ahn_versie: "AHN-versie (terugval op 4)",
+  model: "AHN-model (DTM/DSM)",
+  model_resolutie: "Resolutie AHN-model [m]",
 };
-const ADVANCED = ["group_id", "ahn_index_id", "ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform"];
+const ADVANCED = ["group_id", "ahn_index", "ahn_index_id", "ahn_versie", "model", "model_resolutie"];
 const FILE_LABELS = {
   vakken: "Dijkvakken",
   buitenlijn: "Buitenlijn",

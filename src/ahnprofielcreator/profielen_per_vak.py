@@ -26,6 +26,7 @@ import os
 import sys
 from typing import Optional
 
+from . import ahn
 from .profielen import CrossSectionHeights, CrossSections
 
 
@@ -35,21 +36,22 @@ class Settings:
     cur_dir: str
     # Shapefile met dijkvak lijnen (bevat attribuut `group_id`)
     input_line: str
-    # Nodige AHN informatie
-    ahn_index: str  # Kaartbladen shapefile, bijv. Kaartbladen_AHN5_HKV.shp
-    ahn_file_loc: str  # Locatie van de tiff-files, bijv. P:\OpenData\AHN\AHN5\DTM05
+    # Map met lokale AHN tiffs; ontbrekende bladen worden hierin gedownload
+    ahn_file_loc: str
     # Shapefile met buitenlijn, bepaalt de oriëntatie van de dwarslijnen (optioneel)
     input_line_outside: Optional[str] = None
     group_id: str = "vak_id"  # Attribuut in shape om te groeperen
-    ahn_index_id: str = "Name"  # Attribuut in kaartbladen shape met de bladnaam
+    # Nodige AHN informatie
+    ahn_file_downloaded: Optional[str] = None  # Map voor gedownloade bladen; standaard ahn_file_loc
+    ahn_index: str = ahn.DEFAULT_INDEX  # Kaartbladen met downloadlinks (bladwijzer.gpkg van AHN)
+    ahn_index_id: str = ahn.DEFAULT_INDEX_ID  # Attribuut in kaartbladen met de bladnaam
+    ahn_versie: int = 5  # AHN-versie; bladen zonder deze versie vallen terug op AHN4
+    model: str = "DTM"  # DTM (maaiveld) of DSM (oppervlakte)
+    model_resolutie: float = 0.5  # [m] resolutie van het AHN-model: 0.5 of 5
     # Instellingen
     interval_length: float = 10  # [m] per meter langs normtraject
     cross_length: float = 100.0  # [m] lengte dwarsdoorsnede (helft naar beide kanten)
     ahn_stepsize: float = 0.5  # [m] stapgrootte voor AHN hoogte
-    # Naamgeving AHN tiff-files: f"{prefix}{transform(bladnaam)}{suffix}.tif"
-    ahn_file_prefix: str = "m_"
-    ahn_file_suffix: str = "_deflate"
-    ahn_file_transform: Optional[str] = "lower"
 
     @property
     def output_dir(self):
@@ -72,6 +74,9 @@ OUTPUT_POINTS = "cross_points.shp"
 OUTPUT_CROSS = "cross_lines.shp"
 OUTPUT_CROSS_AHN = "cross_lines_ahn.shp"
 
+# Vervallen instellingen: de bestandsnamen komen nu uit de downloadlinks in de kaartbladindex.
+REMOVED_SETTINGS = ("ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform")
+
 
 def output_dir(cur_dir, interval_length):
     """Outputmap binnen de werkmap, per interval (zoals in het notebook)."""
@@ -90,6 +95,18 @@ def get_logger():
 def run(settings):
     """Voer alle stappen uit het notebook uit en geef de AHN-dwarslijnen per groep terug."""
     logger = get_logger()
+
+    # Eerst de kaartbladindex lezen, zodat fouten in de AHN-instellingen meteen opvallen.
+    tiles = ahn.AHNTiles(
+        settings.ahn_file_loc,
+        download_folder=settings.ahn_file_downloaded,
+        index=settings.ahn_index,
+        index_id=settings.ahn_index_id,
+        version=settings.ahn_versie,
+        model=settings.model,
+        resolution=settings.model_resolutie,
+        logger=logger,
+    )
     os.makedirs(settings.output_dir, exist_ok=True)
 
     # Initialize class voor intervalpunten en bijbehorende dwarslijnen.
@@ -113,18 +130,13 @@ def run(settings):
     ch = CrossSectionHeights(
         settings.output_cross,
         group_id=settings.group_id,
-        ahn_index=settings.ahn_index,
-        ahn_index_id=settings.ahn_index_id,
+        ahn_tiles=tiles,
         ahn_stepsize=settings.ahn_stepsize,
-        ahn_loc=settings.ahn_file_loc,
-        ahn_file_prefix=settings.ahn_file_prefix,
-        ahn_file_suffix=settings.ahn_file_suffix,
-        ahn_file_transform=settings.ahn_file_transform,
         logger=logger,
     )
 
     # AHN hoogtes voor dwarslijnen.
-    logger.info(f"Stap 3/3: AHN hoogtes om de {settings.ahn_stepsize:g} m...")
+    logger.info(f"Stap 3/3: AHN{tiles.version} {tiles.product} hoogtes om de {settings.ahn_stepsize:g} m...")
     heights = ch.crosssections_height_to_file(settings.output_cross_ahn, "ahn")
     logger.info(f"Klaar, output in '{settings.output_dir}'.")
     return heights
@@ -137,7 +149,8 @@ def load_config(path):
     """
     Lees instellingen uit sectie [profielen] van een INI-bestand (sleutels gelijk aan de velden van `Settings`).
 
-    Lege waarden worden overgeslagen, zodat de standaardwaarde geldt.
+    Lege waarden worden overgeslagen, zodat de standaardwaarde geldt. Vervallen instellingen
+    (`REMOVED_SETTINGS`) worden met een waarschuwing genegeerd.
     """
     # Geen interpolatie: '%' in paden moet gewoon kunnen. Commentaar achter een waarde met ' ;' of ' #'.
     parser = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";", "#"))
@@ -149,14 +162,17 @@ def load_config(path):
     fields = {f.name: f for f in dataclasses.fields(Settings)}
     config = {}
     for key, value in parser.items(CONFIG_SECTION):
+        if key in REMOVED_SETTINGS:
+            get_logger().warning(f"Instelling '{key}' in '{path}' wordt niet meer gebruikt en is genegeerd.")
+            continue
         if key not in fields:
             raise ValueError(f"Onbekende instelling in '{path}': {key}")
         value = value.strip().strip('"')
         if value == "":
             continue
-        if fields[key].type is float:
+        if fields[key].type in (int, float):
             try:
-                value = float(value)
+                value = fields[key].type(value)
             except ValueError:
                 raise ValueError(f"'{key}' in '{path}' moet een getal zijn (is '{value}')") from None
         config[key] = value
@@ -174,14 +190,18 @@ def parse_args(argv=None):
     parser.add_argument("--input-line", help="shapefile met dijkvak lijnen")
     parser.add_argument("--input-line-outside", help="shapefile met buitenlijn (oriëntatie dwarslijnen)")
     parser.add_argument("--group-id", help="attribuut in shape om te groeperen (standaard: vak_id)")
-    parser.add_argument("--ahn-index", help="shapefile met AHN kaartbladen")
-    parser.add_argument("--ahn-index-id", help="attribuut met bladnaam in de kaartbladen (standaard: Name)")
+    parser.add_argument("--ahn-index", help="AHN kaartbladen met downloadlinks (standaard: bladwijzer.gpkg)")
+    parser.add_argument("--ahn-index-id", help="attribuut met bladnaam in de kaartbladen (standaard: AHN)")
     parser.add_argument("--ahn-file-loc", help="map met de AHN tiff-files")
+    parser.add_argument(
+        "--ahn-file-downloaded", help="map voor gedownloade AHN-bladen (standaard: --ahn-file-loc)"
+    )
+    parser.add_argument("--ahn-versie", type=int, help="AHN-versie (standaard: 5, met terugval op 4)")
+    parser.add_argument("--model", help="DTM of DSM (standaard: DTM)")
+    parser.add_argument("--model-resolutie", type=float, help="[m] resolutie AHN-model, 0.5 of 5 (standaard: 0.5)")
     parser.add_argument("--interval-length", type=float, help="[m] afstand tussen profielen (standaard: 10)")
     parser.add_argument("--cross-length", type=float, help="[m] lengte dwarsdoorsnede (standaard: 100)")
     parser.add_argument("--ahn-stepsize", type=float, help="[m] stapgrootte voor AHN hoogte (standaard: 0.5)")
-    parser.add_argument("--ahn-file-prefix", help="prefix van de AHN tiff-files (standaard: m_)")
-    parser.add_argument("--ahn-file-suffix", help="suffix van de AHN tiff-files (standaard: _deflate)")
     return parser, parser.parse_args(argv)
 
 
