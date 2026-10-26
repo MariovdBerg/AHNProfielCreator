@@ -56,6 +56,22 @@ class Settings:
     cross_length: float = 100.0  # [m] lengte dwarsdoorsnede (helft naar beide kanten)
     ahn_stepsize: float = 0.5  # [m] stapgrootte voor AHN hoogte
 
+    def __post_init__(self):
+        """Controleer de instellingen, zodat fouten meteen met een duidelijke melding opvallen."""
+        for name in ("interval_length", "cross_length", "ahn_stepsize"):
+            value = float(getattr(self, name))
+            if not value > 0:  # Ook NaN afkeuren
+                raise ValueError(f"'{name}' moet groter dan 0 zijn (is {value:g})")
+            setattr(self, name, value)
+        self.outside_offset = float(self.outside_offset or 0.0)
+        if not self.outside_offset >= 0:
+            raise ValueError(f"'outside_offset' mag niet negatief zijn (is {self.outside_offset:g})")
+        self.outside_side = str(self.outside_side).strip().lower()
+        if self.outside_side not in buitenlijn.ZIJDEN:
+            raise ValueError(f"'outside_side' moet links of rechts zijn (is '{self.outside_side}')")
+        self.model, self.model_resolutie = ahn.check_product(self.model, self.model_resolutie)
+        self.ahn_versie = int(self.ahn_versie)
+
     @property
     def output_dir(self):
         return output_dir(self.cur_dir, self.interval_length)
@@ -282,7 +298,11 @@ def main(argv=None):
     if missing:
         parser.error("ontbrekende instelling(en): " + ", ".join("--" + m.replace("_", "-") for m in missing))
 
-    run(Settings(**config))
+    try:
+        settings = Settings(**config)
+    except ValueError as e:
+        parser.error(str(e))
+    run(settings)
     return 0
 
 
