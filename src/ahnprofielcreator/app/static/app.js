@@ -6,19 +6,30 @@ const LABELS = {
   cur_dir: "Werkmap (output)",
   input_line: "Dijkvakken (lijnen .shp)",
   input_line_outside: "Buitenlijn (.shp)",
-  ahn_index: "AHN kaartbladen (.gpkg/.shp)",
-  ahn_file_loc: "Map met AHN tiffs",
-  ahn_file_downloaded: "Map voor AHN-downloads",
-  group_id: "Attribuut vak-id",
+  ahn_index: "AHN bladen (.gpkg/.shp)",
+  ahn_file_loc: "AHN .TIF-bestanden (map)",
+  ahn_file_downloaded: "AHN downloadmap",
   ahn_index_id: "Attribuut bladnaam",
+  ahn_versie: "AHN versie (terugval op 4)",
+  model: "AHN model",
+  model_resolutie: "AHN resolutie [m]",
+  group_id: "Attribuut vak-id",
   interval_length: "Interval [m]",
   cross_length: "Lengte dwarslijn [m]",
   ahn_stepsize: "Stapgrootte AHN [m]",
-  ahn_versie: "AHN-versie (terugval op 4)",
-  model: "AHN-model (DTM/DSM)",
-  model_resolutie: "Resolutie AHN-model [m]",
 };
-const ADVANCED = ["group_id", "ahn_index", "ahn_index_id", "ahn_versie", "model", "model_resolutie"];
+// Categorieën in het instellingenpaneel, in deze volgorde; onbekende velden komen bij de bronnen.
+const GROUPS = {
+  bronnen: ["cur_dir", "input_line", "input_line_outside", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
+  ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
+  dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
+};
+// Velden met een vaste keuze; leeg = standaardwaarde.
+const OPTIONS = {
+  ahn_versie: ["5", "4", "3", "2", "1"],
+  model: ["DTM", "DSM"],
+  model_resolutie: ["0.5", "5"],
+};
 const FILE_LABELS = {
   vakken: "Dijkvakken",
   buitenlijn: "Buitenlijn",
@@ -229,26 +240,40 @@ function zoomToVak(vak) {
 
 function renderSettings(info) {
   state.settings = info;
-  const main = $("fields-main");
-  const advanced = $("fields-advanced");
-  main.innerHTML = "";
-  advanced.innerHTML = "";
-  for (const field of info.fields) {
+  for (const group of Object.keys(GROUPS)) $(`fields-${group}`).innerHTML = "";
+  const fields = new Map(info.fields.map((field) => [field.name, field]));
+  const grouped = new Set(Object.values(GROUPS).flat());
+  const order = [
+    ...Object.entries(GROUPS).flatMap(([group, names]) => names.map((name) => [group, name])),
+    ...info.fields.filter((field) => !grouped.has(field.name)).map((field) => ["bronnen", field.name]),
+  ];
+  for (const [group, name] of order) {
+    const field = fields.get(name);
+    if (!field) continue;
     const div = document.createElement("div");
     div.className = "field";
     const id = `field-${field.name}`;
     const req = field.required ? ' <span class="req">*</span>' : "";
     div.innerHTML = `<label for="${id}">${escapeHtml(LABELS[field.name] || field.name)}${req}</label>`;
-    const input = document.createElement("input");
+    const value = field.value === null || field.value === undefined ? "" : String(field.value);
+    let input;
+    if (OPTIONS[field.name]) {
+      input = document.createElement("select");
+      const choices = [["", `standaard (${field.default})`], ...OPTIONS[field.name].map((v) => [v, v])];
+      if (value && !OPTIONS[field.name].includes(value)) choices.push([value, value]);
+      for (const [v, text] of choices) input.add(new Option(text, v));
+    } else {
+      input = document.createElement("input");
+      input.type = field.number ? "number" : "text";
+      if (field.number) input.step = "any";
+      input.placeholder = field.default ?? "";
+    }
     input.id = id;
     input.name = field.name;
-    input.type = field.number ? "number" : "text";
-    if (field.number) input.step = "any";
-    input.value = field.value ?? "";
-    input.placeholder = field.default ?? "";
-    input.title = input.value;
+    input.value = value;
+    input.title = value;
     div.appendChild(input);
-    (ADVANCED.includes(field.name) ? advanced : main).appendChild(div);
+    $(`fields-${group}`).appendChild(div);
   }
   renderFiles(info.files);
 }
@@ -265,7 +290,7 @@ function renderFiles(files) {
 
 function formValues() {
   const values = {};
-  for (const input of $("settings-form").querySelectorAll("input")) values[input.name] = input.value;
+  for (const input of $("settings-form").querySelectorAll("input, select")) values[input.name] = input.value;
   return values;
 }
 

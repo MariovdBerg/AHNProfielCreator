@@ -34,18 +34,28 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: v
 .field { margin-bottom: 8px; }
 .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
 .field label .req { color: var(--bad); }
-.field input {
+.field input, .field select {
   width: 100%;
   padding: 5px 7px;
   border: 1px solid var(--border);
   border-radius: 4px;
+  background: #fff;
   font: inherit;
   font-size: 13px;
 }
-.field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
-details { margin: 4px 0 8px; }
-summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+details.group { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 8px; }
+details.group > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+details.group[open] > summary { border-bottom: 1px solid var(--border); }
+details.group > div { padding: 8px 10px 2px; }
 
 .buttons { display: flex; gap: 8px; margin-top: 10px; }
 button {

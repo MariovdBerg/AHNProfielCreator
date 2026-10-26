@@ -14,10 +14,17 @@
     <section>
       <h2>Instellingen</h2>
       <form id="settings-form" autocomplete="off">
-        <div id="fields-main"></div>
-        <details>
-          <summary>Geavanceerd</summary>
-          <div id="fields-advanced"></div>
+        <details class="group" open>
+          <summary>Bronnen</summary>
+          <div id="fields-bronnen"></div>
+        </details>
+        <details class="group">
+          <summary>AHN</summary>
+          <div id="fields-ahn"></div>
+        </details>
+        <details class="group">
+          <summary>Dwarslijnen</summary>
+          <div id="fields-dwarslijnen"></div>
         </details>
         <div class="buttons">
           <button type="submit" id="btn-apply">Toepassen</button>
