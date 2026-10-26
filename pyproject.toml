@@ -9,6 +9,7 @@ description = "Genereer AHN profielen (dwarslijnen met hoogtes) langs een trajec
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "certifi",
     "fiona",
     "numpy",
     "rasterio",
