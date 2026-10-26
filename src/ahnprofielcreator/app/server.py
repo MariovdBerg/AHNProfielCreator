@@ -2,7 +2,7 @@
 """
 Lokale webapp om de invoer en uitvoer van de profielen te bekijken.
 
-Gebruikt alleen de standaardbibliotheek en de pakketten die het project al nodig heeft (fiona).
+Gebruikt alleen de standaardbibliotheek en de pakketten die het project al nodig heeft (fiona, rasterio).
 Leaflet staat in ``static/vendor``; alleen de achtergrondkaarten komen van internet (PDOK).
 
 Starten::
@@ -26,7 +26,7 @@ import webbrowser
 from pathlib import Path
 
 import fiona
-from fiona.transform import transform_geom
+from rasterio.warp import transform
 
 from .. import profielen_per_vak as ppv
 from ..profielen.constants import DEFAULT_CROSS_ID, DEFAULT_POINT_ID, NODATA
@@ -67,6 +67,38 @@ def clean_settings(raw):
             value = field.type(value)
         settings[name] = value
     return settings
+
+
+def to_wgs84(crs, coordinates):
+    """
+    Reken de coördinaten van geometrieën (GeoJSON-nesting, elk type) om naar WGS84.
+
+    Alle punten gaan in één aanroep: `fiona.transform.transform_geom` kost per lijn ~6 ms,
+    wat bij duizenden dwarslijnen het openen van de app minuten liet duren.
+    """
+    points = []
+
+    def flatten(c):
+        if isinstance(c[0], (int, float)):
+            points.append(c)
+        else:
+            for part in c:
+                flatten(part)
+
+    for c in coordinates:
+        flatten(c)
+    if not points:
+        return list(coordinates)
+    xs, ys = transform(crs, WGS84, [p[0] for p in points], [p[1] for p in points])
+    converted = iter(zip(xs, ys, points))
+
+    def rebuild(c):
+        if isinstance(c[0], (int, float)):
+            x, y, p = next(converted)
+            return (x, y, *p[2:])  # Hoogte (z) ongewijzigd
+        return [rebuild(part) for part in c]
+
+    return [rebuild(c) for c in coordinates]
 
 
 class ListHandler(logging.Handler):
@@ -141,16 +173,16 @@ class State:
     def geojson(self, path, properties):
         """GeoJSON in WGS84; `properties(geom, props)` bepaalt welke attributen naar de kaart gaan."""
         crs, features = self.read(path)
-        geoms = transform_geom(crs, WGS84, [g for g, _ in features]) if features else []
+        coords = to_wgs84(crs, [g.coordinates for g, _ in features])
         return {
             "type": "FeatureCollection",
             "features": [
                 {
                     "type": "Feature",
-                    "geometry": {"type": g.type, "coordinates": g.coordinates},
+                    "geometry": {"type": rd_geom.type, "coordinates": c},
                     "properties": properties(rd_geom, props),
                 }
-                for g, (rd_geom, props) in zip(geoms, features)
+                for c, (rd_geom, props) in zip(coords, features)
             ],
         }
 
