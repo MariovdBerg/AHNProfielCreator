@@ -28,10 +28,10 @@ import shapely.geometry
 import shapely.prepared
 import tqdm.auto as tqdm
 
-PROJECT_DIR = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_INDEX = str(PROJECT_DIR / "bladwijzer.gpkg")
+DATA_DIR = pathlib.Path(__file__).resolve().parent / "data"  # Meegeleverd met het pakket
+DEFAULT_INDEX = str(DATA_DIR / "bladwijzer.gpkg")
 DEFAULT_INDEX_ID = "AHN"
-AHN6_INDEX = str(PROJECT_DIR / "bladwijzer_AHN6.gpkg")
+AHN6_INDEX = str(DATA_DIR / "bladwijzer_AHN6.gpkg")
 AHN6_LAYER = "bladindeling_aoi"  # Met 'jaar' (inwinjaar) per km-blad
 FALLBACK_VERSION = 4  # AHN4 dekt heel Nederland
 DOWNLOAD_URL = "https://basisdata.nl/hwh-ahn"

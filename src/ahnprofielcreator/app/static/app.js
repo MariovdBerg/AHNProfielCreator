@@ -350,7 +350,15 @@ async function startRun() {
 }
 
 async function pollRun() {
-  const run = await api("/api/run");
+  let run;
+  try {
+    run = await api("/api/run");
+  } catch (e) {
+    // Server (even) niet bereikbaar: melden en blijven proberen.
+    setRunStatus({ state: "error", message: `Status niet op te halen: ${e.message}`, log: [] });
+    setTimeout(pollRun, 3000);
+    return;
+  }
   setRunStatus(run);
   if (run.state === "running") {
     setTimeout(pollRun, 1000);

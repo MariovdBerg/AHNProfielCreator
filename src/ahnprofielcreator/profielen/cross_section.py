@@ -8,13 +8,14 @@ Created on Wed Jun  5 11:44:20 2019
 
 import bisect
 import collections
-import copy
 import logging
 import math
 import os
 import fiona
 import numpy as np
 import rasterio
+import rasterio.errors
+import rasterio.windows
 import shapely.geometry
 import shapely.ops
 import shapely.prepared
@@ -55,7 +56,16 @@ class IntervalPoints:
             self.input_lines = collections.OrderedDict()
             self.input_line = None
 
+            if self.group_id is not None and self.group_id not in source.schema["properties"]:
+                raise ValueError(f"Attribuut '{self.group_id}' (group_id) ontbreekt in '{self.input_line_file}'")
+
+            duplicates = set()
             for i, row in enumerate(source):
+                if row is None or row["geometry"] is None:
+                    continue
+                if self.group_id is not None and str(row["properties"][self.group_id]) in self.input_lines:
+                    duplicates.add(str(row["properties"][self.group_id]))
+
                 # Read all rows with (multi-)linestrings into multilinestrings.
                 if row["geometry"]["type"] in ["LineString", "MultiLineString"]:
                     if row["geometry"]["type"] == "LineString":
@@ -69,6 +79,12 @@ class IntervalPoints:
                     else:
                         self.input_lines[str(row["properties"][self.group_id])] = geom
                         self.line_input_props[str(row["properties"][self.group_id])] = row["properties"]
+
+            if duplicates:
+                raise ValueError(
+                    f"'{self.group_id}' moet uniek zijn in '{self.input_line_file}'; meerdere lijnen voor: "
+                    + ", ".join(sorted(duplicates))
+                )
 
             if len(self.input_lines) > 0:
                 self.input_line = []
@@ -101,7 +117,7 @@ class IntervalPoints:
                     for point in subpoints:
                         i += 1
 
-                        props = copy.deepcopy(self.line_input_props[subkey])
+                        props = dict(self.line_input_props[subkey])  # Gewone dict: fiona-attributen worden onveranderlijk
                         props[DEFAULT_POINT_ID] = i
                         props[key] = subkey
                         source.write(
@@ -177,6 +193,9 @@ class CrossSections(IntervalPoints):
         # Default outside line
         self.outside_line = None
 
+        # Index of the input point per created cross-section (see interval_crosssections).
+        self.cross_point_indices = None
+
     def process_input_points(self):
         with fiona.open(self.input_points_file, "r") as source:
             self.point_crs = source.crs
@@ -208,6 +227,8 @@ class CrossSections(IntervalPoints):
                 geoms = {}
                 geoms_single = []
                 for row in source:
+                    if row is None or row["geometry"] is None:
+                        continue
                     k = None
                     if self.group_id is not None and self.group_id in row["properties"]:
                         k = str(row["properties"][self.group_id])
@@ -228,16 +249,18 @@ class CrossSections(IntervalPoints):
                                 else:
                                     geoms_single.append(shapely.geometry.LineString(coords))
 
-                if not len(geoms) > 0 and len(geoms_single) > 0:
+                if len(geoms) > 0 and len(geoms_single) > 0:
                     raise ValueError("both geoms and geoms_single are not empty, this is most unexpected...")
                 elif len(geoms) == 0 and len(geoms_single) == 0:
-                    raise ValueError("both geoms and geoms_single are empty, this is most unexpected...")
+                    raise ValueError(f"Buitenlijn '{self.outside_line_file}' bevat geen lijnen")
                 elif len(geoms) > 0:
                     self.outside_line = {k: shapely.geometry.MultiLineString(v) for k, v in geoms.items()}
                 elif len(geoms_single) > 0:
                     self.outside_line = shapely.geometry.MultiLineString(geoms_single)
 
-    def write_crosssections_output(self, output_file, cross_points, crosssections, angles):
+    def write_crosssections_output(self, output_file, cross_points, crosssections, angles, point_indices=None):
+        # `point_indices[key][j]` is the index of the input point of cross-section j. Cross-sections can be
+        # skipped (no intersection with the outside line), so j is not necessarily the point index.
         self.logger.debug(f"Writing cross-sections to '{output_file}'...")
 
         if self.input_lines is None:
@@ -272,7 +295,8 @@ class CrossSections(IntervalPoints):
                         p1 = shapely.geometry.Point(list(line.coords)[0])
                         p2 = shapely.geometry.Point(list(line.coords)[-1])
 
-                        props = copy.deepcopy(self.point_input_props[subkey][j])
+                        point_index = j if point_indices is None else point_indices[subkey][j]
+                        props = dict(self.point_input_props[subkey][point_index])  # Gewone dict: fiona-attributen worden onveranderlijk
                         props[DEFAULT_CROSS_ID] = i
                         props[key] = subkey
                         props["mid_x"] = points[j].x
@@ -407,11 +431,15 @@ class CrossSections(IntervalPoints):
             else:
                 outline = self.outside_line
             pbuiten = cross_section.intersection(outline)
-            if pbuiten.geom_type == "MultiPoint":
-                distances = [p.distance(point) for p in pbuiten.geoms]
-                pbuiten = list(pbuiten.geoms)[distances.index(min(distances))]
+            if not pbuiten.is_empty:
+                # Closest intersection to the point; also works when the outside line partly overlaps the
+                # cross-section (LineString or GeometryCollection instead of (Multi)Point).
+                pbuiten = shapely.ops.nearest_points(pbuiten, point)[0]
+                if pbuiten.distance(point) <= self.tolerance:
+                    # Outside line crosses the dike line here: the outside cannot be determined.
+                    pbuiten = shapely.geometry.Point()
 
-            if pbuiten:
+            if not pbuiten.is_empty:
                 dbuiten = cross_section.project(pbuiten)
                 dtraject = cross_section.project(point)
                 if dbuiten > dtraject:
@@ -433,19 +461,30 @@ class CrossSections(IntervalPoints):
         if self.outside_line is None:
             self.process_outside_line()
 
+        if isinstance(self.outside_line, dict):
+            missing = [k for k in self.input_lines if k not in self.outside_line]
+            if missing:
+                raise ValueError(
+                    f"Buitenlijn '{self.outside_line_file}' heeft geen lijn voor '{self.group_id}': "
+                    + ", ".join(missing)
+                )
+
+        missing = [k for k in self.input_lines if k not in self.input_points]
+        if missing:
+            raise ValueError(f"Geen intervalpunten voor (te korte lijnen?): {', '.join(missing)}")
+
         total = sum([len(self.input_points[k]) for k in self.input_lines])
         with tqdm.tqdm(total=total, desc=f"Creating cross-sections with length {length_crosssection}m") as pbar:
             cross_points = collections.OrderedDict()
             cross_sections = collections.OrderedDict()
             cross_section_angles = collections.OrderedDict()
+            self.cross_point_indices = collections.OrderedDict()
             for key, line in self.input_lines.items():
-                if key not in self.input_points:
-                    raise ValueError(f"group '{key}' (lines) NOT in group points")
-
                 # Initialize empty list of cross-sections.
                 cross_points[key] = []
                 cross_sections[key] = []
                 cross_section_angles[key] = []
+                self.cross_point_indices[key] = []
 
                 # Snap points to line.
                 snapped_points = self.get_snapped_points(line, self.input_points[key])
@@ -460,6 +499,7 @@ class CrossSections(IntervalPoints):
                             cross_points[key].append(point)
                             cross_sections[key].append(c_s)
                             cross_section_angles[key].append(angle)
+                            self.cross_point_indices[key].append(idx)
                         pbar.update(1)
                 else:
                     raise ValueError(f"Snapped points have unknown geometry ({snapped_points.geom_type})")
@@ -475,7 +515,9 @@ class CrossSections(IntervalPoints):
         cross_points, cross_sections, angles = self.interval_crosssections(length_crosssection)
 
         # Write crosssections to shapefile.
-        self.write_crosssections_output(output_crosssections_file, cross_points, cross_sections, angles)
+        self.write_crosssections_output(
+            output_crosssections_file, cross_points, cross_sections, angles, point_indices=self.cross_point_indices
+        )
 
         return cross_sections
 
@@ -624,7 +666,7 @@ class CrossSectionHeights:
                     for j, line in enumerate(subcross):
                         i += 1
 
-                        props = copy.deepcopy(self.cross_input_props[subkey][j])
+                        props = dict(self.cross_input_props[subkey][j])  # Gewone dict: fiona-attributen worden onveranderlijk
                         props[DEFAULT_CROSS_ZD] = i
                         props[key] = subkey
 
@@ -701,15 +743,38 @@ class CrossSectionHeights:
         return match
 
     @staticmethod
-    def find_raster_height(dataset, heights, geom, nodata):
+    def find_raster_height(dataset, heights, geom, nodata, window=None):
+        # `heights` is the part of the raster read with `window` (None = the whole raster).
         height = nodata
 
         row, col = dataset.index(geom.x, geom.y)
+        if window is not None:
+            row -= int(window.row_off)
+            col -= int(window.col_off)
         maxrow, maxcol = heights.shape
-        if 0 <= row < maxrow and 0 <= col < maxcol and heights[row, col] != dataset.nodata:
-            height = heights[row, col].astype(float)
+        if 0 <= row < maxrow and 0 <= col < maxcol:
+            value = heights[row, col]
+            if value != dataset.nodata and not np.isnan(value):
+                height = float(value)
 
         return shapely.geometry.Point(geom.x, geom.y, height)
+
+    def read_raster_window(self, dataset, lines):
+        """Read only the part of the raster around `lines` (a full 0.5 m AHN sheet is ~500 MB)."""
+        bounds = shapely.geometry.MultiLineString(lines).bounds
+        window = rasterio.windows.from_bounds(*bounds, transform=dataset.transform)
+        # One extra cell on each side, so points on the edge of the bounds are inside the window.
+        window = rasterio.windows.Window(
+            math.floor(window.col_off) - 1,
+            math.floor(window.row_off) - 1,
+            math.ceil(window.width) + 3,
+            math.ceil(window.height) + 3,
+        )
+        try:
+            window = window.intersection(rasterio.windows.Window(0, 0, dataset.width, dataset.height))
+        except rasterio.errors.WindowError:
+            return np.empty((0, 0)), rasterio.windows.Window(0, 0, 0, 0)
+        return dataset.read(1, window=window), window
 
     def crosssections_height_ahn(self, dry_run=False):
         ahn_map = {}
@@ -760,13 +825,14 @@ class CrossSectionHeights:
             total_lines = sum([len(self.cross_lines[ckey]) for ckey in ahndict["colkeys"]])
             with tqdm.tqdm(total=total_lines, desc="Parsing lines for this AHN file", leave=False) as pbar:
                 with rasterio.open(ahndict["valid"]) as dataset:
-                    ahn_raster = dataset.read(1)
+                    sheet_lines = [line for ckey in ahndict["colkeys"] for line in self.cross_lines[ckey]]
+                    ahn_raster, window = self.read_raster_window(dataset, sheet_lines)
                     for ckey in ahndict["colkeys"]:
                         for i, line in enumerate(self.cross_lines[ckey]):
                             for j, point in enumerate(cross_heights[ckey][i]):
                                 if point.has_z and not math.isnan(point.z) and point.z != self.nodata:
                                     continue
-                                point = self.find_raster_height(dataset, ahn_raster, point, self.nodata)
+                                point = self.find_raster_height(dataset, ahn_raster, point, self.nodata, window)
                                 cross_heights[ckey][i][j] = point
                             pbar.update(1)
 
@@ -792,16 +858,8 @@ class CrossSectionHeights:
                             p = shapely.geometry.Point(p.x, p.y, self.nodata)
                         fixed_points.append(p)
 
-                    # Remove nodata values in fixed_points, but keep the first and last point
-                    fixed_points2 = []
-                    for j, p in enumerate(fixed_points):
-                        if not math.isnan(p.z) and p.z != self.nodata:
-                            fixed_points2.append(p)
-                        elif j == 0 or j == len(fixed_points) - 1:
-                            p = shapely.geometry.Point(p.x, p.y, self.nodata)
-                            fixed_points2.append(p)
-
-                    # Save list of points as a LineString
+                    # Save list of points as a LineString. Points without height are kept (z = nodata),
+                    # so the points stay at a fixed stepsize along the line.
                     cross_heights[ckey][i] = shapely.geometry.LineString(fixed_points)
                     pbar.update(1)
 

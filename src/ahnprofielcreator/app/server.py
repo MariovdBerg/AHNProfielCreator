@@ -69,6 +69,12 @@ def clean_settings(raw):
     return settings
 
 
+def validate_settings(settings):
+    """Controleer de waarden (zie `Settings`); ontbrekende verplichte paden mogen nog, die komen bij de berekening."""
+    required = {name: "" for name, f in FIELDS.items() if f.default is dataclasses.MISSING}
+    ppv.Settings(**{**required, **settings})
+
+
 def to_wgs84(crs, coordinates):
     """
     Reken de coördinaten van geometrieën (GeoJSON-nesting, elk type) om naar WGS84.
@@ -180,15 +186,17 @@ class State:
     def read(self, path):
         """Lees features (geometrie in de bron-CRS, attributen) met een cache op wijzigingstijd."""
         stat = os.stat(path)
-        key = (os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
-        if key not in self.cache:
+        key = os.path.abspath(path)
+        version = (stat.st_mtime_ns, stat.st_size)
+        # Per bestand alleen de laatste versie bewaren, zodat de cache niet blijft groeien.
+        if key not in self.cache or self.cache[key][0] != version:
             with fiona.open(path) as source:
                 crs = source.crs if source.crs and source.crs.to_string() else RD
                 features = [
                     (row.geometry, dict(row.properties)) for row in source if row is not None and row.geometry
                 ]
-            self.cache[key] = (crs, features)
-        return self.cache[key]
+            self.cache[key] = (version, (crs, features))
+        return self.cache[key][1]
 
     def geojson(self, path, properties):
         """GeoJSON in WGS84; `properties(geom, props)` bepaalt welke attributen naar de kaart gaan."""
@@ -208,7 +216,8 @@ class State:
 
     def layers(self):
         try:
-            self.make_outside_line()
+            if self.run["state"] != "running":  # Tijdens een berekening maakt die de buitenlijn zelf
+                self.make_outside_line()
         except ValueError:
             pass  # Foute instelling: de melding komt bij Toepassen of de berekening, de kaart laadt wel.
         paths = self.paths()
@@ -281,7 +290,7 @@ class State:
                     "z": [None if _is_nodata(c[2]) else round(c[2], 3) for c in coords],
                 }
             )
-        result.sort(key=lambda p: p["id"])
+        result.sort(key=lambda p: (p["id"] is None, p["id"] or 0))
         return {"vak": vak, "outside": bool(self.paths()["buitenlijn"]), "profiles": result}
 
     # ---------- Berekening draaien ----------
@@ -331,7 +340,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def state(self):
         return self.server.state
 
+    def _allowed(self):
+        """
+        Weiger verzoeken die niet van de app zelf komen.
+
+        De Host-header moet 127.0.0.1/localhost zijn (tegen DNS-rebinding) en een eventuele Origin
+        dezelfde host (tegen andere websites die POST'en naar de lokale app).
+        """
+        port = self.server.server_address[1]
+        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        if self.headers.get("Host") not in hosts:
+            return False
+        origin = self.headers.get("Origin")
+        return origin is None or urllib.parse.urlparse(origin).netloc in hosts
+
     def do_GET(self):
+        if not self._allowed():
+            self._send(403, b"Forbidden", "text/plain")
+            return
         url = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(url.query)
         routes = {
@@ -352,14 +378,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
         length = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(length) or b"{}")
+        raw = self.rfile.read(length)  # Altijd uitlezen, ook bij weigeren, anders wordt de verbinding gereset
+
+        # Alleen JSON: dat kan een andere website niet zonder CORS-preflight sturen.
+        content_type = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if not self._allowed() or content_type != "application/json":
+            self._send(403, b"Forbidden", "text/plain")
+            return
+
+        def parse_body():
+            try:
+                body = json.loads(raw or b"{}")
+            except ValueError as e:
+                raise ValueError(f"Ongeldige JSON: {e}") from None
+            if not isinstance(body, dict):
+                raise ValueError("Verwacht een JSON-object")
+            return body
 
         def update_settings():
-            self.state.settings = clean_settings(body)
-            self.state.make_outside_line(force=True)
+            settings = clean_settings(parse_body())
+            validate_settings(settings)
+            with self.state.lock:
+                # Niet tijdens een berekening: die leest o.a. de afgeleide buitenlijn.
+                if self.state.run["state"] == "running":
+                    raise RuntimeError("Er loopt een berekening; wacht tot die klaar is.")
+                self.state.settings = settings
+                self.state.make_outside_line(force=True)
             return self.state.settings_info()
 
         def start_run():
+            parse_body()
             self.state.start_run()
             return self.state.run_status()
 

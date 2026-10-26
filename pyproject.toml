@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 schem = ["rdp"]  # alleen voor profielen.SchemProfile
+test = ["pytest"]
 
 [project.scripts]
 ahn-profielen = "ahnprofielcreator.profielen_per_vak:main"
@@ -28,4 +29,9 @@ ahn-profielen-app = "ahnprofielcreator.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
+"ahnprofielcreator" = ["data/*.gpkg"]
 "ahnprofielcreator.app" = ["static/*", "static/vendor/leaflet/*", "static/vendor/leaflet/images/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["src"]

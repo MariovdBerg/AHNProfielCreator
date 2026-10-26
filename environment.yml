@@ -10,3 +10,4 @@ dependencies:
   - rasterio
   - shapely>=2
   - tqdm
+  - pytest
