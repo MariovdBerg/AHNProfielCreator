@@ -59,7 +59,7 @@ weggeschreven als `buitenlijn_offset.shp` in de outputmap. Let op:
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app
 zelf; je hoeft alleen een map op te geven (`ahn_file_loc`, en eventueel `ahn_file_downloaded`).
 
-1. **Kaartbladindex** (`ahn_index`, standaard `bladwijzer.gpkg` in de projectmap): de bladwijzer
+1. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`): de bladwijzer
    van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
    ([bron](https://basisdata.nl/hwh-ahn/AUX/bladwijzer.gpkg),
    [kaart](https://basisdata.nl/hwh-ahn/AUX/bladwijzer/index.html)). De bladnaam staat in
@@ -93,7 +93,7 @@ AHN-dekking kleuren om dat te zien. De invoer-shapes (dijkvaklijnen en buitenlij
 staan. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
 
 **AHN6** gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg`
-in de projectmap controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
+(ook meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
 de log; voor de berekening gebruikt de app AHN6 (nog) niet.
 
 **Binnen HKV** staan AHN5 en AHN4 (DTM 0,5 m) op `P:\OpenData\AHN\AHN5\DTM05` en
