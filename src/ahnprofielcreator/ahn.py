@@ -250,7 +250,8 @@ class AHNTiles:
             if os.path.exists(part):
                 os.remove(part)
 
-        self._local[_stem(os.path.basename(path))] = path
+        if self._local is not None:  # Anders komt het bestand vanzelf in de index als die gemaakt wordt
+            self._local[_stem(os.path.basename(path))] = path
         return path
 
     def _unzip(self, zip_path):
