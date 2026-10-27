@@ -27,6 +27,13 @@ daarna nog, in die omgeving:
 pip install -e .
 ```
 
+**Activeer de omgeving altijd** (`conda activate ahnprofielcreator`) voordat je Python, `ahn-profielen` of
+`pytest` start; `start_app.bat` doet dat zelf. Roep je `python.exe` uit de omgeving direct aan zonder te
+activeren, dan vindt Windows de DLL's van numpy, GDAL en PROJ niet (die staan in `Library\bin`). Python
+stopt dan zonder melding, of met een fout zoals `Windows fatal exception: code 0xc06d007f`, of
+`Cannot find ... (GDAL_DATA is not defined)`. Dat geldt ook voor een IDE: kies daar de interpreter van
+de conda-omgeving (bijv. in VS Code via *Python: Select Interpreter*), zodat die de omgeving activeert.
+
 ## Instellingen
 
 Kopieer `config.example.ini` naar `config.ini` en pas de paden aan. Alle instellingen staan in de
