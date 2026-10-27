@@ -96,8 +96,14 @@ Het product kies je met:
 | `model_resolutie` | `0.5` | `0.5` of `5` [m] |
 
 Bladen zonder tiff worden met een waarschuwing overgeslagen; in de webapp kun je de dwarslijnen op
-AHN-dekking kleuren om dat te zien. De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New
-staan. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
+AHN-dekking kleuren om dat te zien. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben
+dezelfde bestandsnamen.
+
+De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New (EPSG:28992, of RD + NAP, EPSG:7415)
+staan, met een `.prj`-bestand. Dat wordt bij de start gecontroleerd: een ander coördinatenstelsel of een
+ontbrekende `.prj` geeft een foutmelding en er wordt niets berekend. Herprojecteer het bestand dan eerst,
+bijv. in QGIS (*Vector › Data Management Tools › Reproject Layer*), of ken RD New toe als de coördinaten
+al in RD staan maar de `.prj` ontbreekt.
 
 **AHN6** gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg`
 (ook meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
