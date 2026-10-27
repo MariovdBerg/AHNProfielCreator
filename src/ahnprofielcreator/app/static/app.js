@@ -50,8 +50,16 @@ async function api(url, body) {
     body: JSON.stringify(body),
   };
   const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || response.statusText);
+  // Niet elk antwoord is JSON (bijv. 403/404 als platte tekst); dan de tekst zelf als melding.
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { error: text.trim() };
+  }
+  if (!response.ok) throw new Error(data.error || `${response.status} ${response.statusText}`);
+  if (data === null || typeof data !== "object") throw new Error(`Onverwacht antwoord van ${url}`);
   return data;
 }
 
