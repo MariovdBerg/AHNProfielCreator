@@ -94,7 +94,7 @@ def test_skipped_points_logged_once(dijk, out, tmp_path, caplog):
     logging.disable(logging.NOTSET)
     with caplog.at_level(logging.WARNING, logger="CrossSections"):
         make_cross_sections(dijk, outside, out)
-    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    warnings = [r.getMessage() for r in caplog.records if r.name == "CrossSections" and r.levelno == logging.WARNING]
     assert len(warnings) == 1
     assert "Geen dwarslijn voor 11 van 20 punten" in warnings[0]
     assert "Per vak: B (6), A (5)." in warnings[0]  # Meeste overgeslagen punten eerst
