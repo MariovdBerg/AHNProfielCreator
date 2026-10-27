@@ -26,6 +26,8 @@ import os
 import sys
 from typing import Optional
 
+import fiona
+
 from . import ahn, buitenlijn
 from .profielen import CrossSectionHeights, CrossSections
 
@@ -121,6 +123,39 @@ def outside_line(cur_dir, interval_length, input_line_outside, outside_offset):
     return None
 
 
+RD_EPSG = (28992, 7415)  # RD New, en RD New + NAP-hoogte (zoals de AHN-tiffs)
+
+
+def check_crs(path, label):
+    """
+    Controleer dat een invoerbestand in RD New staat.
+
+    Alle afstanden (interval, dwarslijnen, verschuiving) zijn in meters en de AHN-bladen in RD; een ander
+    coördinatenstelsel gaat zonder deze controle ongemerkt mis (bijv. 5 graden in plaats van 5 m).
+    """
+    with fiona.open(path) as source:
+        crs = source.crs
+    if not crs or not crs.to_string():
+        raise ValueError(
+            f"{label} '{path}' heeft geen coördinatenstelsel (.prj ontbreekt). "
+            "Ken RD New (EPSG:28992) toe, bijv. in QGIS."
+        )
+    epsg = crs.to_epsg()
+    if epsg not in RD_EPSG:
+        name = f"EPSG:{epsg}" if epsg else f"een onbekend stelsel ({crs.to_string()[:60]}...)"
+        raise ValueError(
+            f"{label} '{path}' staat in {name}, niet in RD New (EPSG:28992). "
+            "Herprojecteer het bestand naar RD New, bijv. in QGIS."
+        )
+
+
+def check_input_crs(settings):
+    """Controleer het coördinatenstelsel van de dijkvakken en (als opgegeven) de buitenlijn."""
+    check_crs(settings.input_line, "Dijkvakken")
+    if settings.input_line_outside:
+        check_crs(settings.input_line_outside, "Buitenlijn")
+
+
 def make_outside_line(settings, logger=None):
     """
     Leid de buitenlijn af uit de dijkvakken als er geen buitenlijn is opgegeven en `outside_offset` > 0.
@@ -138,6 +173,7 @@ def make_outside_line(settings, logger=None):
             f"Afstand van de afgeleide buitenlijn ({settings.outside_offset:g} m) moet kleiner zijn dan de halve "
             f"lengte van de dwarslijn ({settings.cross_length / 2:g} m), anders snijden de dwarslijnen hem niet."
         )
+    check_crs(settings.input_line, "Dijkvakken")
     os.makedirs(settings.output_dir, exist_ok=True)
     path = settings.outside_line
     count = buitenlijn.offset_lines_to_file(
@@ -174,6 +210,7 @@ def run(settings):
         resolution=settings.model_resolutie,
         logger=logger,
     )
+    check_input_crs(settings)
     os.makedirs(settings.output_dir, exist_ok=True)
     make_outside_line(settings, logger)
 

@@ -27,6 +27,13 @@ daarna nog, in die omgeving:
 pip install -e .
 ```
 
+**Activeer de omgeving altijd** (`conda activate ahnprofielcreator`) voordat je Python, `ahn-profielen` of
+`pytest` start; `start_app.bat` doet dat zelf. Roep je `python.exe` uit de omgeving direct aan zonder te
+activeren, dan vindt Windows de DLL's van numpy, GDAL en PROJ niet (die staan in `Library\bin`). Python
+stopt dan zonder melding, of met een fout zoals `Windows fatal exception: code 0xc06d007f`, of
+`Cannot find ... (GDAL_DATA is not defined)`. Dat geldt ook voor een IDE: kies daar de interpreter van
+de conda-omgeving (bijv. in VS Code via *Python: Select Interpreter*), zodat die de omgeving activeert.
+
 ## Instellingen
 
 Kopieer `config.example.ini` naar `config.ini` en pas de paden aan. Alle instellingen staan in de
@@ -89,8 +96,14 @@ Het product kies je met:
 | `model_resolutie` | `0.5` | `0.5` of `5` [m] |
 
 Bladen zonder tiff worden met een waarschuwing overgeslagen; in de webapp kun je de dwarslijnen op
-AHN-dekking kleuren om dat te zien. De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New
-staan. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
+AHN-dekking kleuren om dat te zien. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben
+dezelfde bestandsnamen.
+
+De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New (EPSG:28992, of RD + NAP, EPSG:7415)
+staan, met een `.prj`-bestand. Dat wordt bij de start gecontroleerd: een ander coördinatenstelsel of een
+ontbrekende `.prj` geeft een foutmelding en er wordt niets berekend. Herprojecteer het bestand dan eerst,
+bijv. in QGIS (*Vector › Data Management Tools › Reproject Layer*), of ken RD New toe als de coördinaten
+al in RD staan maar de `.prj` ontbreekt.
 
 **AHN6** gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg`
 (ook meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
@@ -176,3 +189,33 @@ De app gebruikt alleen de standaardbibliotheek en fiona. Leaflet staat in
 luchtfoto, AHN, via PDOK) en, tijdens de berekening, ontbrekende AHN-kaartbladen (via basisdata.nl).
 Zonder internet werkt de app ook, maar zonder achtergrond en alleen met tiffs die al lokaal staan.
 De app is alleen bereikbaar vanaf de eigen computer (127.0.0.1).
+
+## Tests
+
+In de geactiveerde omgeving, vanuit de projectmap:
+
+```bash
+pytest
+```
+
+Dit draait de snelle tests (ongeveer 10 s), waaronder een regressietest die intervalpunten en dwarslijnen
+voor `test/test_input` vergelijkt met de referentie in `test/test_output/output_per_vak_10m`. De
+vergelijking van de AHN-hoogtes heeft de AHN5-tiffs (DTM 0,5 m) nodig en draait alleen op verzoek
+(ongeveer 1 minuut, zonder downloads):
+
+```bash
+pytest -m ahn
+```
+
+De tiffs worden standaard gezocht in `P:\OpenData\AHN\AHN5\DTM05`; een andere map geef je op met de
+omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
+
+De referentie is gemaakt met interval 10 m, dwarslijnen van 100 m, AHN5 DTM 0,5 m en stapgrootte 0,5 m.
+Verandert de uitvoer bewust, maak de referentie dan opnieuw met `config.example.ini` (de paden naar
+`test\test_input` staan er al in) en `ahn_file_loc` naar de AHN5-tiffs:
+
+```bash
+ahn-profielen --config config.example.ini --cur-dir test\test_output --ahn-file-loc P:\OpenData\AHN\AHN5\DTM05 --ahn-file-downloaded ahn_data
+```
+
+Een `.dbf` waarvan alleen de datum in de header verandert (byte 4, de dag) hoef je niet te committen.

@@ -1,51 +1,12 @@
 """AHN-hoogtes langs dwarslijnen (profielen.CrossSectionHeights) met een kleine nep-GeoTIFF."""
 
-import numpy as np
 import pytest
 import rasterio
-import rasterio.transform
 import shapely.geometry
-from conftest import read_rows, write_lines
+from conftest import FakeTiles, read_rows, write_lines
 
 from ahnprofielcreator.profielen import CrossSectionHeights
 from ahnprofielcreator.profielen.constants import NODATA
-
-NODATA_TIF = -9999.0
-
-
-class FakeTiles:
-    """Eén kaartblad met een lokale tiff, zonder bladwijzer of downloads."""
-
-    version = 5
-    product = "DTM 0.5 m"
-
-    def __init__(self, path, extent):
-        self.path = path
-        self.extent = shapely.geometry.box(*extent)
-
-    def sheet_names(self, lines):
-        return ["blad"] if self.extent.intersects(shapely.geometry.MultiLineString(lines)) else []
-
-    def file(self, name):
-        return self.path
-
-    def report_ahn6(self, lines):
-        pass
-
-
-@pytest.fixture
-def tif(tmp_path):
-    """Raster van 0..100 x 0..100 m met cellen van 1 m; hoogte = x-coördinaat van de cel (0.5, 1.5, ...)."""
-    path = tmp_path / "ahn.tif"
-    data = np.tile(np.arange(100, dtype="float32") + 0.5, (100, 1))
-    data[:, 60:70] = NODATA_TIF  # Gat in de dekking
-    transform = rasterio.transform.from_origin(0, 100, 1, 1)
-    with rasterio.open(
-        path, "w", driver="GTiff", width=100, height=100, count=1, dtype="float32",
-        crs="EPSG:28992", transform=transform, nodata=NODATA_TIF,
-    ) as dst:
-        dst.write(data, 1)
-    return str(path)
 
 
 def heights_for(tmp_path, tif, line, stepsize=1.0):

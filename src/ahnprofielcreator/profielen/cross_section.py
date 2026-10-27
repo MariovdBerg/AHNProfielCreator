@@ -447,7 +447,8 @@ class CrossSections(IntervalPoints):
                 prof_angle = self.determine_profile_angle(point, pbuiten)
             else:
                 cross_section = None
-                self.logger.warning(f"Could not find intersection with outside line, skipping {key} - {idx}: {pbuiten}")
+                # Summarised per group in interval_crosssections.
+                self.logger.debug(f"Could not find intersection with outside line, skipping {key} - {idx}")
 
         return cross_section, prof_angle
 
@@ -504,7 +505,23 @@ class CrossSections(IntervalPoints):
                 else:
                     raise ValueError(f"Snapped points have unknown geometry ({snapped_points.geom_type})")
 
+        self.log_skipped(cross_sections)
         return cross_points, cross_sections, cross_section_angles
+
+    def log_skipped(self, cross_sections, max_groups=10):
+        """One warning for all points without a cross-section (no intersection with the outside line)."""
+        skipped = {k: len(self.input_points[k]) - len(v) for k, v in cross_sections.items()}
+        skipped = {k: n for k, n in skipped.items() if n > 0}
+        if not skipped:
+            return
+        total = sum(len(self.input_points[k]) for k in cross_sections)
+        groups = ", ".join(f"{k} ({n})" for k, n in sorted(skipped.items(), key=lambda kn: -kn[1])[:max_groups])
+        if len(skipped) > max_groups:
+            groups += f" en nog {len(skipped) - max_groups} vak(ken)"
+        self.logger.warning(
+            f"Geen dwarslijn voor {sum(skipped.values())} van {total} punten: de dwarslijn snijdt de buitenlijn "
+            f"niet (of snijdt de dijklijn zelf). Per vak: {groups}."
+        )
 
     def interval_points_to_file(self, interval=100.0):
         # Wrap parent method with already supplied input points file.
@@ -843,6 +860,9 @@ class CrossSectionHeights:
                 for line in lines:
                     steps = range(0, math.ceil(round(line.length, 2) / self.ahn_stepsize) + 1)
                     cross_heights[ckey].append([line.interpolate(s * self.ahn_stepsize) for s in steps])
+
+        # Same order as the input cross-sections (the loop above goes per AHN sheet).
+        cross_heights = collections.OrderedDict((ckey, cross_heights[ckey]) for ckey in self.cross_lines)
 
         # Convert each list of points to a linestring.
         self.logger.debug("Converting lists of points to linestrings...")

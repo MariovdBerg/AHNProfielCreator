@@ -1,5 +1,6 @@
 """Intervalpunten en dwarslijnen (profielen.CrossSections)."""
 
+import logging
 import math
 
 import pytest
@@ -83,6 +84,20 @@ def test_skipped_cross_sections_keep_point_attributes(dijk, out, tmp_path):
     for _, props in lines:
         point = by_id[props[DEFAULT_POINT_ID]]
         assert (point.x, point.y) == pytest.approx((props["mid_x"], props["mid_y"]))
+
+
+def test_skipped_points_logged_once(dijk, out, tmp_path, caplog):
+    outside = write_lines(
+        tmp_path / "buiten.shp",
+        [(LineString([(0, -5), (45, -5)]), {"vak_id": "A"}), (LineString([(55, 55), (100, 55)]), {"vak_id": "B"})],
+    )
+    logging.disable(logging.NOTSET)
+    with caplog.at_level(logging.WARNING, logger="CrossSections"):
+        make_cross_sections(dijk, outside, out)
+    warnings = [r.getMessage() for r in caplog.records if r.name == "CrossSections" and r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "Geen dwarslijn voor 11 van 20 punten" in warnings[0]
+    assert "Per vak: B (6), A (5)." in warnings[0]  # Meeste overgeslagen punten eerst
 
 
 def test_outside_line_overlapping_cross_section(dijk, out, tmp_path):
