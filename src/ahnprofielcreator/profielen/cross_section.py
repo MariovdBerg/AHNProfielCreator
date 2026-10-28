@@ -793,6 +793,16 @@ class CrossSectionHeights:
             return np.empty((0, 0)), rasterio.windows.Window(0, 0, 0, 0)
         return dataset.read(1, window=window), window
 
+    def warn_empty_sheet(self, name, path, n_inside, n_missing):
+        """Warn if most points on an AHN sheet got no height, e.g. a sheet that is only partly surveyed."""
+        if n_inside == 0 or n_missing / n_inside < EMPTY_SHEET_FRACTION:
+            return
+        self.logger.warning(
+            f"Blad {name}: {100 * n_missing / n_inside:.0f}% van de {n_inside} punten op dit blad heeft geen "
+            f"hoogte ('{os.path.basename(path)}'). Het blad is mogelijk (nog) niet volledig ingewonnen of ligt "
+            "grotendeels in water; controleer de AHN-dekking op de kaart of kies een andere AHN-versie."
+        )
+
     def crosssections_height_ahn(self, dry_run=False):
         ahn_map = {}
         total_lines = 0
@@ -840,8 +850,10 @@ class CrossSectionHeights:
 
             # Add height information to points.
             total_lines = sum([len(self.cross_lines[ckey]) for ckey in ahndict["colkeys"]])
+            n_inside = n_missing = 0  # Points within this raster, and those without a height
             with tqdm.tqdm(total=total_lines, desc="Parsing lines for this AHN file", leave=False) as pbar:
                 with rasterio.open(ahndict["valid"]) as dataset:
+                    bounds = dataset.bounds
                     sheet_lines = [line for ckey in ahndict["colkeys"] for line in self.cross_lines[ckey]]
                     ahn_raster, window = self.read_raster_window(dataset, sheet_lines)
                     for ckey in ahndict["colkeys"]:
@@ -851,7 +863,11 @@ class CrossSectionHeights:
                                     continue
                                 point = self.find_raster_height(dataset, ahn_raster, point, self.nodata, window)
                                 cross_heights[ckey][i][j] = point
+                                if bounds.left <= point.x < bounds.right and bounds.bottom < point.y <= bounds.top:
+                                    n_inside += 1
+                                    n_missing += point.z == self.nodata
                             pbar.update(1)
+            self.warn_empty_sheet(ahn_index, ahndict["valid"], n_inside, n_missing)
 
         # Lines without any AHN file get points without heights.
         for ckey, lines in self.cross_lines.items():

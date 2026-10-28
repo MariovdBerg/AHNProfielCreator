@@ -7,3 +7,4 @@ DEFAULT_CROSS_PID = "POINT_NID"
 DEFAULT_LEFTRIGHT = "LEFTRIGHT"
 DEFAULT_TOPBOTTOM = "TOPBOTTOM"
 NODATA = -99999
+EMPTY_SHEET_FRACTION = 0.5  # Waarschuwen als minstens deze fractie van de punten op een AHN-blad geen hoogte heeft
