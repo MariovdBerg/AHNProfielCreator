@@ -28,7 +28,7 @@ from typing import Optional
 
 import fiona
 
-from . import ahn, buitenlijn
+from . import ahn, buitenlijn, schematisatie
 from .profielen import CrossSectionHeights, CrossSections
 
 
@@ -57,13 +57,22 @@ class Settings:
     interval_length: float = 10  # [m] per meter langs normtraject
     cross_length: float = 100.0  # [m] lengte dwarsdoorsnede (helft naar beide kanten)
     ahn_stepsize: float = 0.5  # [m] stapgrootte voor AHN hoogte
+    # Schematisatie tot een Hydra-NL profiel (.prfl) per vak (optionele stap na de berekening)
+    schem_kwantiel: float = 0.2  # [-] kwantiel van de hoogtes van de profielen in een vak
+    schem_kruin_zoekafstand: float = 10.0  # [m] zoek de kruin binnen deze afstand van de dijklijn
+    schem_ruwheid: float = 1.0  # [-] ruwheid van het talud (0.5 - 1.0)
 
     def __post_init__(self):
         """Controleer de instellingen, zodat fouten meteen met een duidelijke melding opvallen."""
-        for name in ("interval_length", "cross_length", "ahn_stepsize"):
+        for name in ("interval_length", "cross_length", "ahn_stepsize", "schem_kruin_zoekafstand"):
             value = float(getattr(self, name))
             if not value > 0:  # Ook NaN afkeuren
                 raise ValueError(f"'{name}' moet groter dan 0 zijn (is {value:g})")
+            setattr(self, name, value)
+        for name, low, high in (("schem_kwantiel", 0.0, 1.0), ("schem_ruwheid", 0.5, 1.0)):
+            value = float(getattr(self, name))
+            if not low <= value <= high:
+                raise ValueError(f"'{name}' moet tussen {low:g} en {high:g} liggen (is {value:g})")
             setattr(self, name, value)
         self.outside_offset = float(self.outside_offset or 0.0)
         if not self.outside_offset >= 0:
@@ -91,6 +100,14 @@ class Settings:
         return os.path.join(self.output_dir, OUTPUT_CROSS_AHN)
 
     @property
+    def output_prfl_dir(self):
+        return os.path.join(self.output_dir, OUTPUT_PRFL_DIR)
+
+    @property
+    def output_schem(self):
+        return os.path.join(self.output_prfl_dir, OUTPUT_SCHEM)
+
+    @property
     def outside_line(self):
         return outside_line(
             self.cur_dir, self.interval_length, self.input_line_outside, self.outside_offset
@@ -101,6 +118,8 @@ OUTPUT_POINTS = "cross_points.shp"
 OUTPUT_CROSS = "cross_lines.shp"
 OUTPUT_CROSS_AHN = "cross_lines_ahn.shp"
 OUTPUT_OUTSIDE = "buitenlijn_offset.shp"
+OUTPUT_PRFL_DIR = "prfl"  # Geschematiseerde profielen, één .prfl per vak
+OUTPUT_SCHEM = "schematisatie.json"  # Overzicht van de schematisatie (in OUTPUT_PRFL_DIR, met een .csv ernaast)
 
 # Vervallen instellingen: de bestandsnamen komen nu uit de downloadlinks in de kaartbladindex.
 REMOVED_SETTINGS = ("ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform")
@@ -242,9 +261,16 @@ def run(settings):
 
     # AHN hoogtes voor dwarslijnen.
     logger.info(f"Stap 3/3: AHN{tiles.version} {tiles.product} hoogtes om de {settings.ahn_stepsize:g} m...")
-    heights = ch.crosssections_height_to_file(settings.output_cross_ahn, "ahn")
+    heights = ch.crosssections_height_to_file(settings.output_cross_ahn)
     logger.info(f"Klaar, output in '{settings.output_dir}'.")
     return heights
+
+
+def schematise(settings):
+    """Optionele stap na `run`: schematiseer de AHN-profielen per vak tot een Hydra-NL profiel (.prfl)."""
+    logger = get_logger()
+    logger.info(f"Schematiseren: één Hydra-NL profiel (.prfl) per vak, kwantiel {settings.schem_kwantiel:g}...")
+    return schematisatie.schematise(settings, logger)
 
 
 CONFIG_SECTION = "profielen"
@@ -317,6 +343,16 @@ def parse_args(argv=None):
     parser.add_argument("--interval-length", type=float, help="[m] afstand tussen profielen (standaard: 10)")
     parser.add_argument("--cross-length", type=float, help="[m] lengte dwarsdoorsnede (standaard: 100)")
     parser.add_argument("--ahn-stepsize", type=float, help="[m] stapgrootte voor AHN hoogte (standaard: 0.5)")
+    parser.add_argument(
+        "--schematiseren",
+        action="store_true",
+        help="schematiseer daarna de profielen per vak tot een Hydra-NL profiel (.prfl); nodig: prflcheck",
+    )
+    parser.add_argument("--schem-kwantiel", type=float, help="kwantiel van de hoogtes per vak (standaard: 0.2)")
+    parser.add_argument(
+        "--schem-kruin-zoekafstand", type=float, help="[m] zoek de kruin binnen deze afstand van de dijklijn (standaard: 10)"
+    )
+    parser.add_argument("--schem-ruwheid", type=float, help="ruwheid van het talud, 0.5 - 1.0 (standaard: 1.0)")
     return parser, parser.parse_args(argv)
 
 
@@ -327,7 +363,7 @@ def main(argv=None):
         config = load_config(args.config) if args.config else {}
     except (OSError, ValueError, configparser.Error) as e:
         parser.error(str(e))
-    overrides = {k: v for k, v in vars(args).items() if k != "config" and v is not None}
+    overrides = {k: v for k, v in vars(args).items() if k not in ("config", "schematiseren") and v is not None}
     config.update(overrides)
 
     required = [f.name for f in dataclasses.fields(Settings) if f.default is dataclasses.MISSING]
@@ -339,7 +375,11 @@ def main(argv=None):
         settings = Settings(**config)
     except ValueError as e:
         parser.error(str(e))
+    if args.schematiseren:
+        schematisatie.import_prflcheck()  # Meteen melden als prflcheck ontbreekt, niet pas na de berekening
     run(settings)
+    if args.schematiseren:
+        schematise(settings)
     return 0
 
 

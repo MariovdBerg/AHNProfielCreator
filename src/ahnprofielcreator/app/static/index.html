@@ -31,9 +31,16 @@
           <summary>Dwarslijnen</summary>
           <div id="fields-dwarslijnen"></div>
         </details>
+        <details class="group">
+          <summary>Schematisatie (.prfl)</summary>
+          <div id="fields-schematisatie"></div>
+        </details>
         <div class="buttons">
           <button type="submit" id="btn-apply">Toepassen</button>
           <button type="button" id="btn-run" class="primary">Berekening starten</button>
+        </div>
+        <div class="buttons">
+          <button type="button" id="btn-schem" title="Optioneel, na de berekening: één Hydra-NL profiel (.prfl) per vak" disabled>Schematiseren (.prfl)</button>
         </div>
       </form>
       <div id="run-status" class="status" hidden></div>
@@ -69,6 +76,7 @@
         <button type="button" id="btn-next" title="Volgend profiel (→)">▶</button>
         <span id="profile-title">Klik op een dwarslijn in de kaart om het profiel te zien.</span>
         <label class="toggle"><input type="checkbox" id="show-others" checked> andere profielen in vak</label>
+        <label class="toggle"><input type="checkbox" id="show-schem" checked> schematisatie</label>
       </header>
       <div id="chart"></div>
       <div id="chart-tip" hidden></div>

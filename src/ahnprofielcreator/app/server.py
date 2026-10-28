@@ -126,7 +126,7 @@ class State:
         # Instellingen van het demotraject, zolang de gebruiker die niet aanpast (voor de melding in de app).
         self.demo_settings = dict(self.settings) if demo else None
         self.cache = {}
-        self.run = {"state": "idle", "log": collections.deque(maxlen=500), "message": ""}
+        self.run = {"state": "idle", "task": None, "log": collections.deque(maxlen=500), "message": ""}
 
     # ---------- Instellingen en paden ----------
 
@@ -145,13 +145,22 @@ class State:
             "punten": None,
             "dwarslijnen": None,
             "profielen": None,
+            "schematisatie": None,
         }
         if self.value("cur_dir"):
             out = ppv.output_dir(self.value("cur_dir"), self.value("interval_length"))
             paths["punten"] = os.path.join(out, ppv.OUTPUT_POINTS)
             paths["dwarslijnen"] = os.path.join(out, ppv.OUTPUT_CROSS)
             paths["profielen"] = os.path.join(out, ppv.OUTPUT_CROSS_AHN)
+            paths["schematisatie"] = os.path.join(out, ppv.OUTPUT_PRFL_DIR, ppv.OUTPUT_SCHEM)
         return paths
+
+    def schem_stale(self):
+        """True als de schematisatie ouder is dan de AHN-profielen (de berekening is daarna opnieuw gedaan)."""
+        paths = self.paths()
+        if not all(paths[k] and os.path.isfile(paths[k]) for k in ("profielen", "schematisatie")):
+            return False
+        return os.path.getmtime(paths["schematisatie"]) < os.path.getmtime(paths["profielen"])
 
     def settings_info(self):
         fields = []
@@ -168,7 +177,7 @@ class State:
         paths = self.paths()
         files = {k: {"path": p, "exists": bool(p) and os.path.isfile(p)} for k, p in paths.items()}
         demo = DEMO_NAME if self.demo_settings is not None and self.settings == self.demo_settings else None
-        return {"fields": fields, "files": files, "demo": demo}
+        return {"fields": fields, "files": files, "demo": demo, "schem_stale": self.schem_stale()}
 
     def make_outside_line(self, force=False):
         """
@@ -200,6 +209,18 @@ class State:
                     (row.geometry, dict(row.properties)) for row in source if row is not None and row.geometry
                 ]
             self.cache[key] = (version, (crs, features))
+        return self.cache[key][1]
+
+    def read_schem(self, path):
+        """Resultaten van de schematisatie per vak (schematisatie.json), met een cache op wijzigingstijd."""
+        stat = os.stat(path)
+        key = os.path.abspath(path)
+        version = (stat.st_mtime_ns, stat.st_size)
+        if key not in self.cache or self.cache[key][0] != version:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            data["vakken"] = {str(r["vak"]): r for r in data["vakken"]}
+            self.cache[key] = (version, data)
         return self.cache[key][1]
 
     def geojson(self, path, properties):
@@ -295,11 +316,29 @@ class State:
                 }
             )
         result.sort(key=lambda p: (p["id"] is None, p["id"] or 0))
-        return {"vak": vak, "outside": bool(self.paths()["buitenlijn"]), "profiles": result}
+
+        # Geschematiseerd profiel van dit vak (als de schematisatie gedaan is).
+        schem_path = self.paths()["schematisatie"]
+        schem, kwantiel = None, None
+        if schem_path and os.path.isfile(schem_path):
+            data = self.read_schem(schem_path)
+            schem = data["vakken"].get(vak)
+            kwantiel = data.get("instellingen", {}).get("kwantiel")
+        return {
+            "vak": vak,
+            "outside": bool(self.paths()["buitenlijn"]),
+            "profiles": result,
+            "schem": schem,
+            "schem_kwantiel": kwantiel,
+            "schem_stale": self.schem_stale(),
+        }
 
     # ---------- Berekening draaien ----------
 
-    def start_run(self):
+    TASKS = {"berekening": ppv.run, "schematisatie": ppv.schematise}
+
+    def start_run(self, task="berekening"):
+        """Start de berekening of (daarna) de schematisatie in een aparte thread."""
         with self.lock:
             if self.run["state"] == "running":
                 raise RuntimeError("Er loopt al een berekening.")
@@ -307,18 +346,23 @@ class State:
             if missing:
                 raise ValueError(f"Ontbrekende instelling(en): {', '.join(missing)}")
             settings = ppv.Settings(**self.settings)
+            if task == "schematisatie":
+                ppv.schematisatie.import_prflcheck()
+                if not os.path.isfile(settings.output_cross_ahn):
+                    raise FileNotFoundError("Er zijn nog geen AHN-profielen voor deze instellingen; start eerst de berekening.")
             self.run["state"] = "running"
+            self.run["task"] = task
             self.run["message"] = ""
             self.run["log"].clear()
 
-        threading.Thread(target=self._run, args=(settings,), daemon=True).start()
+        threading.Thread(target=self._run, args=(self.TASKS[task], settings), daemon=True).start()
 
-    def _run(self, settings):
+    def _run(self, func, settings):
         logger = ppv.get_logger()
         handler = ListHandler(self.run["log"])
         logger.addHandler(handler)
         try:
-            ppv.run(settings)
+            func(settings)
             self.run["message"] = "Klaar."
             self.run["state"] = "done"
         except Exception as e:
@@ -329,7 +373,12 @@ class State:
             logger.removeHandler(handler)
 
     def run_status(self):
-        return {"state": self.run["state"], "message": self.run["message"], "log": list(self.run["log"])}
+        return {
+            "state": self.run["state"],
+            "task": self.run["task"],
+            "message": self.run["message"],
+            "log": list(self.run["log"]),
+        }
 
 
 def _is_nodata(z):
@@ -410,12 +459,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.state.make_outside_line(force=True)
             return self.state.settings_info()
 
-        def start_run():
+        def start(task):
             parse_body()
-            self.state.start_run()
+            self.state.start_run(task)
             return self.state.run_status()
 
-        routes = {"/api/settings": update_settings, "/api/run": start_run}
+        routes = {
+            "/api/settings": update_settings,
+            "/api/run": lambda: start("berekening"),
+            "/api/schem": lambda: start("schematisatie"),
+        }
         if url.path in routes:
             self._api(routes[url.path])
         else:
@@ -424,7 +477,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _api(self, func):
         try:
             status, data = 200, func()
-        except (FileNotFoundError, ValueError, RuntimeError) as e:
+        except (FileNotFoundError, ImportError, ValueError, RuntimeError) as e:
             status, data = 400, {"error": str(e)}
         except Exception as e:
             traceback.print_exc()

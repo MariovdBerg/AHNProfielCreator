@@ -1,42 +1,81 @@
 import numpy as np
-import rdp
 
 from .constants import *
+
+# Grenzen voor de hellingen (1:n) van het buitentalud, zoals in de controle van Hydra-NL/Ringtoets.
+TALUD_STEILST = 1  # Steiler dan 1:1 mag niet
+TALUD_FLAUWST = 8  # Een talud is niet flauwer dan 1:8
+BERM_STEILST = 15  # Een berm is niet steiler dan 1:15
+BERM_FLAUWST = 100  # Flauwer dan 1:100 mag niet
+MAX_BERMEN = 2
+DECIMALEN = 3  # Afronding van x en z, zoals in een .prfl
+
+
+def rdp(points, epsilon):
+    """
+    Vereenvoudig een lijn met het Ramer-Douglas-Peucker algoritme (zoals `rdp.rdp` uit het pakket rdp).
+
+    Een punt blijft staan als het verder dan `epsilon` van de lijn tussen de omliggende bewaarde punten
+    ligt. Iteratief en met numpy, zonder het (trage, recursieve) pakket rdp.
+    """
+    points = np.asarray(points, dtype=float)
+    keep = np.zeros(len(points), dtype=bool)
+    keep[[0, -1]] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        first, last = stack.pop()
+        if last - first < 2:
+            continue
+        start, end = points[first], points[last]
+        between = points[first + 1 : last]
+        dx, dy = end - start
+        norm = np.hypot(dx, dy)
+        if norm == 0:
+            dist = np.hypot(between[:, 0] - start[0], between[:, 1] - start[1])
+        else:
+            dist = np.abs(dx * (start[1] - between[:, 1]) - dy * (start[0] - between[:, 0])) / norm
+        i = int(np.argmax(dist))
+        if dist[i] > epsilon:
+            index = first + 1 + i
+            keep[index] = True
+            stack += [(first, index), (index, last)]
+    return points[keep]
 
 
 class SchemProfile:
     @staticmethod
     def maak_geschematiseerd_profiel(
-        profiel_groep, xstart, xend, nodata=NODATA, quantile=0.2, xstep=0.1, rdp_eps=0.2, min_hydra_step=2
+        profielen, xstart, xend, nodata=NODATA, quantile=0.2, xstep=0.1, rdp_eps=0.2, min_hydra_step=2
     ):
+        """
+        Maak één geschematiseerd profiel uit een groep profielen (bijv. alle dwarslijnen van een dijkvak).
+
+        `profielen` is een lijst met per profiel (d, z): afstand tot de dijklijn en hoogte. Hoogtes gelijk aan
+        `nodata` of NaN tellen niet mee. Per x is de hoogte het `quantile`-kwantiel van de profielen, op een
+        grid met stappen van `min_hydra_step`; daarna vereenvoudigd met RDP (`rdp_eps`).
+        """
         if min_hydra_step < xstep:
-            raise ValueError(f"min_hydra_step ({min_hydra_step}) is groter dan xstep ({xstep}), mag niet")
-        if int(min_hydra_step / xstep) != (min_hydra_step / xstep):
+            raise ValueError(f"min_hydra_step ({min_hydra_step}) is kleiner dan xstep ({xstep}), mag niet")
+        if not np.isclose(round(min_hydra_step / xstep), min_hydra_step / xstep):
             raise ValueError(f"xstep ({xstep}) is geen meervoud (integer) van min_hydra_step ({min_hydra_step})")
 
         xlijn_simp, ylijn_simp, clean_profielen = None, None, None
-        if len(profiel_groep) > 0:
+        if len(profielen) > 0:
             clean_profielen = []
 
             # Maak een regelmatig x-grid voor de profielen
             x = np.arange(xstart, xend + xstep, xstep).round(decimals=2)
 
             # Bepaal de y waardes van de profielen voor het regelmatige x-grid
-            yv = np.zeros((len(x), len(profiel_groep)))
-            for i, row in enumerate(profiel_groep.itertuples()):
-                xyz = np.array(row.geometry.coords)
-                # centreer op middelpunt
-                d = np.sqrt((xyz[:, 0] - xyz[0, 0]) ** 2 + (xyz[:, 1] - xyz[0, 1]) ** 2)
-                d_mid = np.sqrt((xyz[0, 0] - row.mid_x) ** 2 + (xyz[0, 1] - row.mid_y) ** 2)
-                d = d - d_mid
-                z = xyz[:, 2]
+            yv = np.zeros((len(x), len(profielen)))
+            for i, (d, z) in enumerate(profielen):
+                d = np.asarray(d, dtype=float)
+                z = np.asarray(z, dtype=float)
 
-                # vervang nodata door nan
-                z[z == nodata] = np.nan
-
-                # Drop nans.
-                d = d[~np.isnan(z)]
-                z = z[~np.isnan(z)]
+                # Drop nodata en nans.
+                valid = ~np.isnan(z) & (z != nodata)
+                d = d[valid]
+                z = z[valid]
 
                 clean_profielen.append((d, z))
 
@@ -91,7 +130,7 @@ class SchemProfile:
 
                 # Vereenvoudig definitieve lijn met rdp
                 if len(ylijn) > 0:
-                    rdp_vec = rdp.rdp(np.array([xlijn, ylijn]).T, epsilon=rdp_eps)
+                    rdp_vec = rdp(np.array([xlijn, ylijn]).T, epsilon=rdp_eps)
                     xlijn_simp = rdp_vec[:, 0]
                     ylijn_simp = rdp_vec[:, 1]
                 else:
@@ -132,7 +171,7 @@ class SchemProfile:
         ylijn = np.interp(xlijn, x_hydra, y_hydra)
 
         # Vereenvoudig definitieve lijn met rdp
-        rdp_vec = rdp.rdp(np.array([xlijn, ylijn]).T, epsilon=rdp_eps)
+        rdp_vec = rdp(np.array([xlijn, ylijn]).T, epsilon=rdp_eps)
         xlijn_simp = rdp_vec[:, 0]
         ylijn_simp = rdp_vec[:, 1]
 
@@ -164,6 +203,37 @@ class SchemProfile:
         return slopes
 
     @staticmethod
+    def hydra_fouten(x, z):
+        """
+        Regels voor het buitentalud die (x, z) schendt, als lijst met meldingen (leeg = in orde).
+
+        Dezelfde regels als de controle van Hydra-NL/Ringtoets voor het dijkdeel (prflcheck, fouten 111-120).
+        """
+        x = np.asarray(x, dtype=float)
+        z = np.asarray(z, dtype=float)
+        if len(x) < 2:
+            return ["minder dan 2 punten"]
+        dx, dz = np.diff(x), np.diff(z)
+        if (dx <= 0).any() or (dz <= 0).any():
+            return ["x en z lopen niet op"]
+        tan = dz / dx
+        fouten = []
+        if (tan > 1 / TALUD_STEILST).any():
+            fouten.append(f"steiler dan 1:{TALUD_STEILST}")
+        if (tan < 1 / BERM_FLAUWST).any():
+            fouten.append(f"flauwer dan 1:{BERM_FLAUWST}")
+        if ((tan < 1 / TALUD_FLAUWST) & (tan > 1 / BERM_STEILST)).any():
+            fouten.append(f"tussen 1:{TALUD_FLAUWST} en 1:{BERM_STEILST}")
+        berm = tan <= 1 / BERM_STEILST
+        if (berm[:-1] & berm[1:]).any():
+            fouten.append("twee bermen achter elkaar")
+        if berm[0] or berm[-1]:
+            fouten.append("begint of eindigt met een berm")
+        if berm.sum() > MAX_BERMEN:
+            fouten.append(f"meer dan {MAX_BERMEN} bermen")
+        return fouten
+
+    @staticmethod
     def maak_hydra_profiel(
         xlijn_simp,
         ylijn_simp,
@@ -173,7 +243,14 @@ class SchemProfile:
         rdp_eps=0.2,
         hydra_step=2,
         hist_slopes=None,
+        max_iter=20,
     ):
+        """
+        Pas een (vereenvoudigd) profiel aan tot een buitentalud dat aan de regels van Hydra-NL voldoet.
+
+        Alleen het deel tot `cut_off_buitentalud` (x van de kruin) telt mee. Geeft x, y, hellingen (1:n) en
+        de historie van de aanpassingen terug: (melding, x, y, hellingen) per stap.
+        """
 
         # buitentalud
         if cut_off_buitentalud is not None:
@@ -242,7 +319,7 @@ class SchemProfile:
             target_y = None
             target_ind = None
             if ind == 0:
-                print("LOEEE")
+                raise ValueError("Eerste strekking is negatief, kan geen 1:100 berm maken")
             else:
                 for i in range(ind - 1, -1, -1):
                     # a*x+b=b*x+d
@@ -304,7 +381,8 @@ class SchemProfile:
             msg = "Strekking te flauw, verander naar 1:100 berm"
             if verbose:
                 print(msg)
-            x_add = 100 * (ybuiten[ind + 1] - ybuiten[ind]) - (xbuiten[ind + 1] - xbuiten[ind])
+            # Iets steiler dan 1:100, zodat het na afronden op mm niet te flauw is.
+            x_add = 99.9 * (ybuiten[ind + 1] - ybuiten[ind]) - (xbuiten[ind + 1] - xbuiten[ind])
             xbuiten[(ind + 1) :] += x_add
             # shift alles zodat kruin op de goede plek blijft liggen
             xbuiten -= x_add
@@ -317,7 +395,7 @@ class SchemProfile:
             msg = "Strekking te steil, verander naar 1:1 talud"
             if verbose:
                 print(msg)
-            x_add = 1 * (ybuiten[ind + 1] - ybuiten[ind]) - (xbuiten[ind + 1] - xbuiten[ind])
+            x_add = 1.01 * (ybuiten[ind + 1] - ybuiten[ind]) - (xbuiten[ind + 1] - xbuiten[ind])
             xbuiten[(ind + 1) :] += x_add
             # shift alles zodat kruin op de goede plek blijft liggen
             xbuiten -= x_add
@@ -343,6 +421,18 @@ class SchemProfile:
             xbuiten -= x_add
             slopes = SchemProfile.__bepaal_helling(xbuiten, ybuiten, eps_talud, verbose)
             hist_slopes.append((msg, xbuiten.copy(), ybuiten.copy(), slopes.copy()))
+
+        # Geen twee bermen achter elkaar: voeg ze samen tot één berm.
+        double = np.flatnonzero((slopes[:-1] >= 15) & (slopes[1:] >= 15))
+        while len(double) > 0:
+            msg = "Twee bermen achter elkaar, voeg samen tot één berm"
+            if verbose:
+                print(msg)
+            xbuiten = np.delete(xbuiten, double[0] + 1)
+            ybuiten = np.delete(ybuiten, double[0] + 1)
+            slopes = SchemProfile.__bepaal_helling(xbuiten, ybuiten, eps_talud, verbose)
+            hist_slopes.append((msg, xbuiten.copy(), ybuiten.copy(), slopes.copy()))
+            double = np.flatnonzero((slopes[:-1] >= 15) & (slopes[1:] >= 15))
 
         # Mag niet eindigen met een berm, en liefst niet met een tuimeldijk
         while len(slopes) > 0:
@@ -397,20 +487,36 @@ class SchemProfile:
             slopes = slopes[n_berms[-2] :]
             hist_slopes.append((msg, xbuiten.copy(), ybuiten.copy(), slopes.copy()))
 
-        # Controleer stepsize.
+        # Afronden zoals in een .prfl; de controle hieronder gaat over de afgeronde waarden.
+        xbuiten = xbuiten.round(decimals=DECIMALEN)
+        ybuiten = ybuiten.round(decimals=DECIMALEN)
+        if len(xbuiten) < 2:
+            return xbuiten, ybuiten, np.array([]), hist_slopes
+        slopes = SchemProfile.__bepaal_helling(xbuiten, ybuiten, eps_talud, verbose)
+
+        # Een aanpassing kan een eerdere regel weer schenden (bijv. een 1:15 berm aan het begin): herhaal dan
+        # alle regels, en verdeel het profiel opnieuw als een stap kleiner is dan hydra_step.
         diff = np.diff(xbuiten).round(decimals=2)
-        while (diff < 2).any():
-            x_simp2, y_simp2 = SchemProfile.__maak_profiel_stap(
-                xbuiten, ybuiten, rdp_eps=rdp_eps, hydra_step=hydra_step
-            )
+        too_short = (diff < hydra_step).any()
+        if (too_short or SchemProfile.hydra_fouten(xbuiten, ybuiten)) and max_iter > 0:
+            if too_short:
+                x_next, y_next = SchemProfile.__maak_profiel_stap(
+                    xbuiten, ybuiten, rdp_eps=rdp_eps, hydra_step=hydra_step
+                )
+                msg = f"Stap kleiner dan {hydra_step:g} m, profiel opnieuw verdeeld"
+                hist_slopes.append((msg, x_next.copy(), y_next.copy(), None))
+            else:
+                x_next, y_next = xbuiten, ybuiten
             xbuiten, ybuiten, slopes, hist_slopes = SchemProfile.maak_hydra_profiel(
-                x_simp2,
-                y_simp2,
+                x_next,
+                y_next,
                 cut_off_buitentalud=None,
                 eps_talud=eps_talud,
                 verbose=verbose,
+                rdp_eps=rdp_eps,
+                hydra_step=hydra_step,
                 hist_slopes=hist_slopes,
+                max_iter=max_iter - 1,
             )
-            diff = np.diff(xbuiten).round(decimals=2)
 
         return xbuiten, ybuiten, slopes, hist_slopes

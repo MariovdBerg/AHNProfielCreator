@@ -19,12 +19,16 @@ const LABELS = {
   interval_length: "Interval [m]",
   cross_length: "Lengte dwarslijn [m]",
   ahn_stepsize: "Stapgrootte AHN [m]",
+  schem_kwantiel: "Kwantiel hoogtes per vak [-]",
+  schem_kruin_zoekafstand: "Kruin zoeken binnen [m] van dijklijn",
+  schem_ruwheid: "Ruwheid talud [-]",
 };
 // Categorieën in het instellingenpaneel, in deze volgorde; onbekende velden komen bij de bronnen.
 const GROUPS = {
   bronnen: ["cur_dir", "input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
   ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
   dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
+  schematisatie: ["schem_kwantiel", "schem_kruin_zoekafstand", "schem_ruwheid"],
 };
 // Velden met een vaste keuze; leeg = standaardwaarde.
 const OPTIONS = {
@@ -39,6 +43,7 @@ const FILE_LABELS = {
   punten: "Intervalpunten",
   dwarslijnen: "Dwarslijnen",
   profielen: "AHN-profielen",
+  schematisatie: "Schematisatie (.prfl)",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -89,8 +94,9 @@ const state = {
   layers: {},
   vakIndex: new Map(),
   colorMode: "vak",
-  profiles: new Map(), // vak -> {outside, profiles}
+  profiles: new Map(), // vak -> {outside, profiles, schem, schem_stale}
   selected: null, // {vak, index}
+  running: false,
 };
 
 // ---------- Kaart ----------
@@ -301,8 +307,18 @@ function renderFiles(files) {
     const status = !file.path ? "missing" : file.exists ? "ok" : "missing";
     const mark = file.exists ? "✓" : "✗";
     const title = file.path ? escapeHtml(file.path) : "niet ingesteld";
-    return `<li class="${status}" title="${title}"><span class="mark">${mark}</span><span class="name">${label}</span></li>`;
+    const stale = key === "schematisatie" && file.exists && state.settings.schem_stale ? " (verouderd)" : "";
+    return `<li class="${status}" title="${title}"><span class="mark">${mark}</span><span class="name">${label}${stale}</span></li>`;
   }).join("");
+  updateButtons();
+}
+
+// Schematiseren kan pas als er AHN-profielen zijn; niets starten tijdens een berekening.
+function updateButtons() {
+  const profiles = state.settings && state.settings.files.profielen.exists;
+  $("btn-run").disabled = state.running;
+  $("btn-apply").disabled = state.running;
+  $("btn-schem").disabled = state.running || !profiles;
 }
 
 function formValues() {
@@ -341,21 +357,23 @@ async function loadLayers() {
 function setRunStatus(run) {
   const status = $("run-status");
   const log = $("run-log");
-  const labels = { running: "Berekening loopt…", done: "Berekening klaar.", error: run.message };
+  const what = run.task === "schematisatie" ? "Schematiseren" : "Berekening";
+  const labels = { running: `${what} loopt…`, done: `${what} klaar.`, error: run.message };
   status.hidden = run.state === "idle";
   status.className = `status ${run.state}`;
   status.textContent = labels[run.state] || "";
   log.hidden = run.log.length === 0;
   log.textContent = run.log.join("\n");
   log.scrollTop = log.scrollHeight;
-  $("btn-run").disabled = run.state === "running";
-  $("btn-apply").disabled = run.state === "running";
+  state.running = run.state === "running";
+  updateButtons();
 }
 
-async function startRun() {
+// Berekening (/api/run) of schematisatie (/api/schem) starten, met de instellingen uit het formulier.
+async function startRun(url = "/api/run") {
   try {
     renderSettings(await api("/api/settings", formValues()));
-    setRunStatus(await api("/api/run", {}));
+    setRunStatus(await api(url, {}));
   } catch (e) {
     setRunStatus({ state: "error", message: e.message, log: [] });
     return;
@@ -452,6 +470,17 @@ function pathData(profile, x, y) {
   return d;
 }
 
+// Korte status van de schematisatie van het vak, voor achter de titel.
+function schemStatus(data) {
+  const schem = data.schem;
+  if (!schem) return "";
+  const stale = data.schem_stale ? " (verouderd, schematiseer opnieuw)" : "";
+  if (schem.fout) return ` · niet geschematiseerd: ${schem.fout}${stale}`;
+  const check = schem.check;
+  const result = !check ? "" : check.code === 0 ? "OK" : `fout ${check.code}: ${check.omschrijving}`;
+  return ` · ${schem.bestand}: ${result}, kruin ${schem.kruinhoogte} m NAP, richting ${schem.richting}°${stale}`;
+}
+
 function drawChart() {
   const el = $("chart");
   const title = $("profile-title");
@@ -471,11 +500,14 @@ function drawChart() {
   }
 
   const profile = data.profiles[index];
-  title.textContent = `Vak ${vak} – dwarslijn ${profile.id} (${index + 1} van ${data.profiles.length})`;
+  title.textContent = `Vak ${vak} – dwarslijn ${profile.id} (${index + 1} van ${data.profiles.length})${schemStatus(data)}`;
 
   const shown = $("show-others").checked ? data.profiles : [profile];
+  // Schematisatie van het vak: representatief profiel en Hydra-NL profiel (lijnen met x en z).
+  const schem = $("show-schem").checked && data.schem && !data.schem.fout ? data.schem : null;
+  const schemLines = schem ? [schem.representatief, schem.hydra].filter(Boolean) : [];
   let dMin = Infinity, dMax = -Infinity, zMin = Infinity, zMax = -Infinity;
-  for (const p of shown) {
+  for (const p of [...shown, ...schemLines.map((l) => ({ d: l.x, z: l.z }))]) {
     for (let i = 0; i < p.d.length; i++) {
       dMin = Math.min(dMin, p.d[i]);
       dMax = Math.max(dMax, p.d[i]);
@@ -501,6 +533,23 @@ function drawChart() {
     ? `<text class="axis-label" x="${m.left + 4}" y="${m.top + 12}">← buiten</text>
        <text class="axis-label" x="${width - m.right - 4}" y="${m.top + 12}" text-anchor="end">binnen →</text>`
     : "";
+  const line = (l) => l.x.map((v, i) => `${i ? "L" : "M"}${x(v).toFixed(1)},${y(l.z[i]).toFixed(1)}`).join("");
+  let schemSvg = "";
+  if (schem) {
+    const hydra = schem.hydra;
+    const check = schem.check;
+    const ok = check && check.code === 0;
+    schemSvg = `
+      <path class="schem-repr" d="${line(schem.representatief)}"/>
+      ${hydra ? `<path class="schem-hydra" d="${line(hydra)}"/>` : ""}
+      ${hydra ? hydra.x.map((v, i) => `<circle class="schem-point" r="3.5" cx="${x(v)}" cy="${y(hydra.z[i])}"/>`).join("") : ""}
+      <circle class="schem-crest" r="4" cx="${x(schem.kruin.x)}" cy="${y(schem.kruin.z)}"/>
+      <g class="legend" transform="translate(${m.left + 8} ${m.top + 30})">
+        <line class="schem-repr" x1="0" x2="22" y1="0" y2="0"/><text x="28" y="4">representatief profiel (kwantiel ${data.schem_kwantiel ?? "?"})</text>
+        <line class="schem-hydra" x1="0" x2="22" y1="16" y2="16"/>
+        <text x="28" y="20" class="${ok ? "" : "bad"}">${escapeHtml(schem.bestand || "")}${check ? `: ${ok ? "OK" : `fout ${check.code}`}` : ""}</text>
+      </g>`;
+  }
 
   el.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}">
@@ -518,6 +567,7 @@ function drawChart() {
       ${sides}
       ${others}
       <path class="selected" stroke="${color}" d="${pathData(profile, x, y)}"/>
+      ${schemSvg}
       <line class="cursor" y1="${m.top}" y2="${height - m.bottom}" visibility="hidden"/>
       <circle class="dot" r="4" fill="${color}" visibility="hidden"/>
       <rect x="${m.left}" y="${m.top}" width="${width - m.left - m.right}" height="${height - m.top - m.bottom}" fill="transparent"/>
@@ -567,7 +617,9 @@ $("settings-form").addEventListener("submit", async (event) => {
     setRunStatus({ state: "error", message: e.message, log: [] });
   }
 });
-$("btn-run").addEventListener("click", startRun);
+$("btn-run").addEventListener("click", () => startRun("/api/run"));
+$("btn-schem").addEventListener("click", () => startRun("/api/schem"));
+$("show-schem").addEventListener("change", drawChart);
 $("btn-prev").addEventListener("click", () => step(-1));
 $("btn-next").addEventListener("click", () => step(1));
 $("show-others").addEventListener("change", drawChart);

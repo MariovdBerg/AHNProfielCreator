@@ -5,19 +5,28 @@ Genereert AHN profielen langs een traject, per dijkvak. Dit is de package-versie
 
 1. interval punten langs de dijkvaklijnen (`cross_points.shp`);
 2. dwarslijnen door die punten, georiënteerd met de buitenlijn (`cross_lines.shp`);
-3. AHN hoogtes langs de dwarslijnen (`cross_lines_ahn.shp`, 3D LineString).
+3. AHN hoogtes langs de dwarslijnen (`cross_lines_ahn.shp`, 3D LineString);
+4. optioneel: per vak één geschematiseerd Hydra-NL profiel (`prfl/<vak>.prfl`), zie [Schematiseren](#schematiseren-prfl).
 
 De output komt in `<cur_dir>/output_per_vak_<interval_length>m/`.
 
-`hkvpy.profielen` is opgenomen als `ahnprofielcreator.profielen`; hkvpy hoeft dus niet
-geïnstalleerd te zijn. `SchemProfile` heeft daarnaast het pakket `rdp` nodig (`pip install -e .[schem]`).
+`hkvpy.profielen` is opgenomen als `ahnprofielcreator.profielen` (alleen de onderdelen die de app
+gebruikt); hkvpy hoeft dus niet geïnstalleerd te zijn.
 
 ## Installatie
 
-Maak eenmalig de conda-omgeving aan (certifi, fiona, rasterio, shapely, numpy, tqdm):
+Maak eenmalig de conda-omgeving aan (certifi, fiona, rasterio, shapely, numpy, tqdm, en `prflcheck` voor het
+schematiseren):
 
 ```bash
 conda env create -f environment.yml
+```
+
+Bestaat de omgeving al, installeer `prflcheck` ([ProfielCheckPython](https://github.com/MariovdBerg/ProfielCheckPython),
+niet op PyPI) dan los, in de geactiveerde omgeving. Zonder `prflcheck` werkt alles behalve het schematiseren.
+
+```bash
+pip install https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip
 ```
 
 Voor de webapp is dat genoeg. Voor het commando `ahn-profielen` of gebruik vanuit eigen scripts
@@ -160,6 +169,34 @@ run(Settings(
 ))
 ```
 
+### Schematiseren (.prfl)
+
+Een optionele stap ná de berekening: per dijkvak één geschematiseerd profiel voor Hydra-NL (`.prfl`, versie 4).
+In de webapp met de knop *Schematiseren (.prfl)*, op de commandline met `--schematiseren`
+(`ahn-profielen --config config.ini --schematiseren`) en vanuit Python met `schematise(settings)` na `run(settings)`.
+Nodig: een buitenlijn (opgegeven of afgeleid), zodat bekend is welke kant buiten ligt, en het pakket `prflcheck`.
+
+Per vak:
+
+1. **Representatief profiel:** alle dwarslijnen van het vak samen, per afstand tot de dijklijn het kwantiel
+   `schem_kwantiel` (standaard 0,2) van de AHN-hoogtes, met stappen van 2 m en vereenvoudigd
+   (Ramer-Douglas-Peucker, 0,2 m). Een laag kwantiel geeft een wat lager, voorzichtiger profiel.
+2. **Kruin:** het hoogste punt van dat profiel binnen `schem_kruin_zoekafstand` (standaard 10 m) van de dijklijn.
+   Ligt de dijklijn niet op of bij de kruin, vergroot dan deze afstand.
+3. **Buitentalud:** het deel van de buitenzijde tot de kruin, aangepast aan de regels van Hydra-NL: hellingen
+   tussen 1:1 en 1:100, geen delen tussen 1:8 en 1:15, geen twee bermen achter elkaar, hoogstens twee bermen,
+   beginnen en eindigen met een talud en stappen van minstens 2 m. De regels worden herhaald tot het profiel
+   klopt; de aanpassingen staan in het memo van het `.prfl`.
+4. **Wegschrijven en controleren:** met `prflcheck` (ProfielCheckPython), zonder voorland of dam, ruwheid
+   `schem_ruwheid` (standaard 1,0), kruinhoogte van stap 2 en als richting de gemiddelde dijknormaal naar buiten
+   (graden t.o.v. noord). De x is de afstand tot de dijklijn. Elk profiel wordt gecontroleerd met de
+   Hydra/Ringtoets-regels; een afgekeurd profiel wordt wel weggeschreven, met een waarschuwing in de log.
+
+De bestanden komen in `<outputmap>/prfl/`: `<vak>.prfl`, `schematisatie.csv` (overzicht per vak, voor Excel)
+en `schematisatie.json` (voor de webapp). Bij opnieuw schematiseren worden de `.prfl`-bestanden van de vorige
+keer eerst verwijderd; andere bestanden in de map blijven staan. Controleer het resultaat altijd: de schematisatie
+is een automatisch startpunt, geen vervanging van een beoordeling van het profiel.
+
 ## Webapp
 
 Een lokale webapp om invoer en uitvoer te bekijken en de berekening te starten. Installeren van
@@ -190,8 +227,11 @@ Andere poort: `--port`. Na `pip install -e .` werkt ook `ahn-profielen-app --con
   buitenlijn staat de buitenzijde links.
 - **Instellingen:** aanpassen en *Toepassen* toont de bestanden bij die instellingen;
   *Berekening starten* voert alle stappen uit en laadt daarna het resultaat.
+- **Schematiseren (.prfl):** na de berekening; daarna toont de profielgrafiek per vak ook het representatieve
+  profiel (gestippeld) en het Hydra-NL profiel (oranje), met de uitkomst van de controle in de titel. Is de
+  berekening daarna opnieuw gedaan, dan staat de schematisatie als *verouderd* bij de bestanden.
 
-De app gebruikt alleen de standaardbibliotheek en fiona. Leaflet staat in
+De app gebruikt alleen de standaardbibliotheek en fiona (en `prflcheck` voor het schematiseren). Leaflet staat in
 `src/ahnprofielcreator/app/static/vendor/leaflet`. Van internet komen de achtergrondkaarten (BRT,
 luchtfoto, AHN, via PDOK) en, tijdens de berekening, ontbrekende AHN-kaartbladen (via basisdata.nl).
 Zonder internet werkt de app ook, maar zonder achtergrond en alleen met tiffs die al lokaal staan.

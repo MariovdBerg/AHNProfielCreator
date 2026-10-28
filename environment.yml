@@ -11,3 +11,7 @@ dependencies:
   - shapely>=2
   - tqdm
   - pytest
+  - pip
+  - pip:
+      # Schematiseren tot .prfl (ProfielCheckPython, niet op PyPI); optioneel
+      - https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip

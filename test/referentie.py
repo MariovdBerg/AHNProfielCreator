@@ -99,7 +99,7 @@ def heights(name, out, tiles):
     """Stap 3: AHN-hoogtes langs de dwarslijnen in map `out`."""
     out = Path(out)
     ch = CrossSectionHeights(str(out / "cross_lines.shp"), group_id=GROUP_ID, ahn_tiles=tiles, ahn_stepsize=AHN_STEPSIZE)
-    ch.crosssections_height_to_file(str(out / "cross_lines_ahn.shp"), "ahn")
+    ch.crosssections_height_to_file(str(out / "cross_lines_ahn.shp"))
 
 
 def make_reference(name):

@@ -34,6 +34,9 @@ def test_normalisation():
         ("outside_side", "boven"),
         ("model", "DEM"),
         ("model_resolutie", 1),
+        ("schem_kwantiel", 1.5),
+        ("schem_ruwheid", 0.3),
+        ("schem_kruin_zoekafstand", 0),
     ],
 )
 def test_invalid_settings(field, value):

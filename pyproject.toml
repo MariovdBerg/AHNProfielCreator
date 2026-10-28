@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-schem = ["rdp"]  # alleen voor profielen.SchemProfile
+# Schematiseren tot .prfl (ProfielCheckPython, niet op PyPI)
+schem = ["prflcheck @ https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip"]
 test = ["pytest"]
 
 [project.scripts]
