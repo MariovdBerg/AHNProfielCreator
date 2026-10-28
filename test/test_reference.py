@@ -1,35 +1,21 @@
 """
-Regressietest: de volledige keten op test/test_input moet de referentie in test/test_output opleveren.
+Regressietest: de volledige keten per testgeval (zie referentie.py) moet de referentie in test/test_output opleveren.
 
-Stap 1 en 2 (punten en dwarslijnen) draaien altijd. Stap 3 (AHN-hoogtes) heeft de AHN5-tiffs nodig en
+Stap 1 en 2 (buitenlijn, punten en dwarslijnen) draaien altijd, net als stap 3 (AHN-hoogtes) voor het demotraject:
+daarvan komt de AHN-strook mee met het pakket. Stap 3 voor de andere gevallen heeft de AHN5-tiffs nodig en
 draait alleen met ``pytest -m ahn``; de map met tiffs komt uit ``AHN_TEST_DIR`` (standaard de HKV-map op P:).
 Er wordt nooit gedownload: ontbreekt een blad, dan wordt de test overgeslagen.
 
-Referentie opnieuw maken (na een bedoelde wijziging): zie "Tests" in de README.
+Referentie opnieuw maken (na een bedoelde wijziging): ``python test/referentie.py``.
 """
 
 import math
-import os
-from pathlib import Path
 
 import fiona
 import pytest
-import shapely.geometry
+import referentie
 
-from ahnprofielcreator import ahn
-from ahnprofielcreator.profielen import CrossSectionHeights, CrossSections
-
-ROOT = Path(__file__).parent
-INPUT_LINE = str(ROOT / "test_input" / "WAD_GEKB_basisanalyse_profielen_v2.shp")
-INPUT_OUTSIDE = str(ROOT / "test_input" / "WAD_GEKB_basisanalyse_profielen_v2_outsideline.shp")
-REFERENCE = ROOT / "test_output" / "output_per_vak_10m"
-AHN_DIR = os.environ.get("AHN_TEST_DIR", r"P:\OpenData\AHN\AHN5\DTM05")
-
-# Instellingen waarmee de referentie gemaakt is.
-GROUP_ID = "vak_id"
-INTERVAL = 10.0
-CROSS_LENGTH = 100.0
-AHN_STEPSIZE = 0.5
+MET_AHN_TEST_DIR = [name for name in referentie.CASES if name != "demo"]  # Hoogtes uit AHN_TEST_DIR
 
 
 def read(path):
@@ -55,6 +41,11 @@ def assert_same(path, reference):
 def assert_coords(coords, ref_coords, where):
     if isinstance(coords[0], (int, float)):
         coords, ref_coords = [coords], [ref_coords]
+    if coords and isinstance(coords[0][0], (list, tuple)):  # MultiLineString
+        assert len(coords) == len(ref_coords), where
+        for part, ref_part in zip(coords, ref_coords):
+            assert_coords(part, ref_part, where)
+        return
     assert len(coords) == len(ref_coords), where
     for c, r in zip(coords, ref_coords):
         assert c[:2] == pytest.approx(r[:2], abs=1e-6), where
@@ -65,47 +56,44 @@ def assert_coords(coords, ref_coords, where):
 
 @pytest.fixture(scope="module")
 def cross_sections(tmp_path_factory):
-    out = tmp_path_factory.mktemp("referentie")
-    cs = CrossSections(
-        INPUT_LINE, str(out / "cross_points.shp"), group_id=GROUP_ID, outside_line_file=INPUT_OUTSIDE
-    )
-    cs.interval_points_to_file(interval=INTERVAL)
-    cs.crosssections_to_file(str(out / "cross_lines.shp"), length_crosssection=CROSS_LENGTH)
-    return out
+    """Stap 1 en 2 per geval, één keer per testsessie; geeft de outputmap."""
+    made = {}
+
+    def make(name):
+        if name not in made:
+            out = tmp_path_factory.mktemp(name)
+            referentie.cross_sections(name, out)
+            made[name] = out
+        return made[name]
+
+    return make
 
 
-def test_interval_points_match_reference(cross_sections):
-    assert_same(cross_sections / "cross_points.shp", REFERENCE / "cross_points.shp")
+@pytest.mark.parametrize("name", list(referentie.CASES))
+@pytest.mark.parametrize("file", ["cross_points.shp", "cross_lines.shp"])
+def test_cross_sections_match_reference(cross_sections, name, file):
+    assert_same(cross_sections(name) / file, referentie.OUTPUT / name / file)
 
 
-def test_cross_lines_match_reference(cross_sections):
-    assert_same(cross_sections / "cross_lines.shp", REFERENCE / "cross_lines.shp")
+@pytest.mark.parametrize("name", [n for n, case in referentie.CASES.items() if not case.get("outside")])
+def test_derived_outside_line_matches_reference(cross_sections, name):
+    assert_same(cross_sections(name) / "buitenlijn.shp", referentie.OUTPUT / name / "buitenlijn.shp")
 
 
-def local_tiles():
-    """AHN5-bladen langs het traject uit `AHN_DIR`, zonder downloads; None als er een ontbreekt."""
-    if not os.path.isdir(AHN_DIR):
-        return None
-    tiles = ahn.AHNTiles(AHN_DIR, download_folder=AHN_DIR)
-    with fiona.open(REFERENCE / "cross_lines.shp") as source:
-        lines = [shapely.geometry.shape(row.geometry) for row in source]
-    for name in tiles.sheet_names(lines):
-        url = tiles.sheets[name][1].get(5)
-        path = url and tiles._local_file(ahn.tif_name(url))
-        if not path:
-            return None
-        tiles._files[name] = path  # Geen downloads of terugval op AHN4
-    tiles.report_ahn6 = lambda lines: None  # Geen netwerk
-    return tiles
+def check_heights(cross_sections, name):
+    out = cross_sections(name)
+    tiles = referentie.local_tiles(referentie.ahn_dir(name), out / "cross_lines.shp")
+    if tiles is None:
+        pytest.skip(f"AHN5-tiffs voor '{name}' niet (allemaal) gevonden in '{referentie.ahn_dir(name)}' (zet AHN_TEST_DIR)")
+    referentie.heights(name, out, tiles)
+    assert_same(out / "cross_lines_ahn.shp", referentie.OUTPUT / name / "cross_lines_ahn.shp")
+
+
+def test_demo_heights_match_reference(cross_sections):
+    check_heights(cross_sections, "demo")
 
 
 @pytest.mark.ahn
-def test_ahn_profiles_match_reference(cross_sections):
-    tiles = local_tiles()
-    if tiles is None:
-        pytest.skip(f"AHN5-tiffs langs het traject niet (allemaal) gevonden in '{AHN_DIR}' (zet AHN_TEST_DIR)")
-    ch = CrossSectionHeights(
-        str(cross_sections / "cross_lines.shp"), group_id=GROUP_ID, ahn_tiles=tiles, ahn_stepsize=AHN_STEPSIZE
-    )
-    ch.crosssections_height_to_file(str(cross_sections / "cross_lines_ahn.shp"), "ahn")
-    assert_same(cross_sections / "cross_lines_ahn.shp", REFERENCE / "cross_lines_ahn.shp")
+@pytest.mark.parametrize("name", MET_AHN_TEST_DIR)
+def test_ahn_profiles_match_reference(cross_sections, name):
+    check_heights(cross_sections, name)

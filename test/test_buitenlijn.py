@@ -10,7 +10,7 @@ from ahnprofielcreator.profielen import CrossSections
 from ahnprofielcreator.profielen_per_vak import Settings, check_crs, make_outside_line
 
 LineString = shapely.geometry.LineString
-TEST_INPUT = "test/test_input/WAD_GEKB_basisanalyse_profielen_v2.shp"
+TEST_INPUT = "test/test_input/duin/duin.shp"
 
 
 # ---------- offset_geometry ----------

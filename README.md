@@ -144,8 +144,8 @@ from ahnprofielcreator import Settings, run
 
 run(Settings(
     cur_dir=r"...\profiel_shapes",
-    input_line=r"...\WAD_GEKB_basisanalyse_profielen_v2.shp",
-    input_line_outside=r"...\WAD_GEKB_basisanalyse_profielen_v2_outsideline.shp",
+    input_line=r"...\dijkvakken.shp",
+    input_line_outside=r"...\buitenlijn.shp",
     outside_offset=0.0,  # of: input_line_outside=None en bijv. 5 m om de buitenlijn af te leiden
     outside_side="links",
     group_id="vak_id",
@@ -205,10 +205,15 @@ In de geactiveerde omgeving, vanuit de projectmap:
 pytest
 ```
 
-Dit draait de snelle tests (ongeveer 10 s), waaronder een regressietest die intervalpunten en dwarslijnen
-voor `test/test_input` vergelijkt met de referentie in `test/test_output/output_per_vak_10m`. De
-vergelijking van de AHN-hoogtes heeft de AHN5-tiffs (DTM 0,5 m) nodig en draait alleen op verzoek
-(ongeveer 1 minuut, zonder downloads):
+Dit draait de snelle tests (ongeveer 20 s), waaronder een regressietest die per testgeval de buitenlijn,
+intervalpunten en dwarslijnen vergelijkt met de referentie in `test/test_output/<geval>`. De testgevallen
+zijn het demotraject en stukken normtraject in `test/test_input/<geval>` (gesloten ringen, multipart,
+korte vakken, haarspeldbocht, bladhoek met water, wisselende tekenrichting en een duin); de README daar
+beschrijft wat elk geval test, `test/test_gevallen.py` legt dat vast. De instellingen per geval staan in
+`test/referentie.py`.
+
+De AHN-hoogtes van het demotraject komen uit de meegeleverde strook en worden altijd vergeleken. Die van
+de andere gevallen hebben de AHN5-tiffs (DTM 0,5 m) nodig en draaien alleen op verzoek (zonder downloads):
 
 ```bash
 pytest -m ahn
@@ -217,12 +222,13 @@ pytest -m ahn
 De tiffs worden standaard gezocht in `P:\OpenData\AHN\AHN5\DTM05`; een andere map geef je op met de
 omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
 
-De referentie is gemaakt met interval 10 m, dwarslijnen van 100 m, AHN5 DTM 0,5 m en stapgrootte 0,5 m.
-Verandert de uitvoer bewust, maak de referentie dan opnieuw met `config.example.ini` (de paden naar
-`test\test_input` staan er al in) en `ahn_file_loc` naar de AHN5-tiffs:
+Verandert de uitvoer bewust, maak de referentie dan opnieuw (met `AHN_TEST_DIR` als de tiffs niet op P:
+staan):
 
 ```bash
-ahn-profielen --config config.example.ini --cur-dir test\test_output --ahn-file-loc P:\OpenData\AHN\AHN5\DTM05 --ahn-file-downloaded ahn_data
+python test/referentie.py
 ```
+
+Met een naam erachter (bijv. `python test/referentie.py ringen`) alleen dat geval.
 
 Een `.dbf` waarvan alleen de datum in de header verandert (byte 4, de dag) hoef je niet te committen.
