@@ -125,6 +125,7 @@ button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accen
 .status.running { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .status.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .status.error { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+#demo-note { margin: 0 0 10px; }
 
 #run-log {
   max-height: 180px;

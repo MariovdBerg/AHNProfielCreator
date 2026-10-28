@@ -286,6 +286,12 @@ function renderSettings(info) {
     div.appendChild(input);
     $(`fields-${group}`).appendChild(div);
   }
+  const note = $("demo-note");
+  note.hidden = !info.demo;
+  note.textContent = info.demo
+    ? `Demo: ${info.demo}, met een meegeleverde AHN5-strook (geen download nodig). ` +
+      "Klik op Berekening starten, of vul eigen bestanden in."
+    : "";
   renderFiles(info.files);
 }
 

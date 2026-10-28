@@ -96,7 +96,10 @@ Het product kies je met:
 | `model_resolutie` | `0.5` | `0.5` of `5` [m] |
 
 Bladen zonder tiff worden met een waarschuwing overgeslagen; in de webapp kun je de dwarslijnen op
-AHN-dekking kleuren om dat te zien. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben
+AHN-dekking kleuren om dat te zien. Heeft minstens de helft van de punten op een blad geen hoogte, dan
+staat dat als waarschuwing in de log. Dat kan water zijn, maar ook een AHN5-blad dat nog maar deels
+ingewonnen is (bijv. 40BZ2: het blad bestaat, maar bevat 0,1% data). De app valt dan niet terug op AHN4;
+kies zo nodig zelf `ahn_versie = 4`. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben
 dezelfde bestandsnamen.
 
 De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New (EPSG:28992, of RD + NAP, EPSG:7415)
@@ -164,6 +167,10 @@ het pakket is niet nodig: dubbelklik op `start_app.bat`. Dat activeert de conda-
 `ahnprofielcreator`, gebruikt `config.ini` naast het bestand (als die er is) en opent de browser op
 <http://127.0.0.1:8050/>. Stoppen: sluit het venster of druk Ctrl+C.
 
+- **Demo:** zonder `config.ini` (of met `--demo`) start de app met een demotraject: 3 km Lekdijk bij
+  Schalkwijk (normtraject 44-1) in zes dijkvakken, met buitenlijn. Een uitgeknipte AHN5-strook komt mee,
+  dus *Berekening starten* werkt direct en zonder internet (dwarslijnen tot 200 m). De output komt in
+  `output\demo`. Zie `src/ahnprofielcreator/data/demo`.
 - Ander configuratiebestand: sleep het `.ini`-bestand op `start_app.bat`, of `start_app.bat pad\naar\config.ini`.
 - Andere conda-omgeving: pas `AHN_ENV` bovenin `start_app.bat` aan (of zet de omgevingsvariabele `AHN_ENV`).
 

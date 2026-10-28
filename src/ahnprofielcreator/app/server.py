@@ -29,6 +29,7 @@ import fiona
 from rasterio.warp import transform
 
 from .. import profielen_per_vak as ppv
+from ..demo import DEMO_NAME, demo_config
 from ..profielen.constants import DEFAULT_CROSS_ID, DEFAULT_POINT_ID, NODATA
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -119,9 +120,11 @@ class ListHandler(logging.Handler):
 
 
 class State:
-    def __init__(self, config):
+    def __init__(self, config, demo=False):
         self.lock = threading.Lock()
         self.settings = clean_settings(config)
+        # Instellingen van het demotraject, zolang de gebruiker die niet aanpast (voor de melding in de app).
+        self.demo_settings = dict(self.settings) if demo else None
         self.cache = {}
         self.run = {"state": "idle", "log": collections.deque(maxlen=500), "message": ""}
 
@@ -164,7 +167,8 @@ class State:
             )
         paths = self.paths()
         files = {k: {"path": p, "exists": bool(p) and os.path.isfile(p)} for k, p in paths.items()}
-        return {"fields": fields, "files": files}
+        demo = DEMO_NAME if self.demo_settings is not None and self.settings == self.demo_settings else None
+        return {"fields": fields, "files": files, "demo": demo}
 
     def make_outside_line(self, force=False):
         """
@@ -452,18 +456,26 @@ def main(argv=None):
     parser.add_argument("-c", "--config", help="INI-bestand met instellingen (zelfde als voor ahn-profielen)")
     parser.add_argument("--port", type=int, default=8050, help="poort (standaard: 8050)")
     parser.add_argument("--no-browser", action="store_true", help="open de browser niet automatisch")
+    parser.add_argument(
+        "--demo", action="store_true", help="start met het meegeleverde demotraject (standaard zonder --config)"
+    )
     args = parser.parse_args(argv)
 
     try:
         config = ppv.load_config(args.config) if args.config else {}
     except (OSError, ValueError, configparser.Error) as e:
         parser.error(str(e))
+    demo = not args.config or args.demo
+    if demo:
+        config = demo_config()
 
     # Alleen lokaal bereikbaar: de app leest en schrijft bestanden op deze computer.
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.state = State(config)
+    server.state = State(config, demo=demo)
 
     url = f"http://127.0.0.1:{args.port}/"
+    if demo:
+        print(f"Geen instellingen opgegeven: demotraject {DEMO_NAME} geladen.")
     print(f"AHN profielen app draait op {url} (stoppen met Ctrl+C)")
     if not args.no_browser:
         threading.Timer(0.5, webbrowser.open, args=(url,)).start()
