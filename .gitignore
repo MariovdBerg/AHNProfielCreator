@@ -18,6 +18,7 @@ build/
 
 # Other
 *.zip
+/.qgis
 
 # Lokale en gedownloade AHN tiffs
 /ahn_data/
