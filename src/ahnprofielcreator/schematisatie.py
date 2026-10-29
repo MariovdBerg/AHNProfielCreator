@@ -2,15 +2,18 @@
 """
 Schematiseren van de AHN-profielen tot één Hydra-NL profiel (.prfl) per dijkvak.
 
-Per vak:
+Per vak (zie `profielen.schem_cross`):
 
-1. Alle dwarslijnen met AHN-hoogtes samen tot één representatief profiel: per afstand tot de dijklijn het
-   kwantiel `schem_kwantiel` van de hoogtes, met stappen van 2 m en vereenvoudigd (`SchemProfile`).
+1. Alle dwarslijnen met AHN-hoogtes samen tot één representatief profiel: per afstand tot de dijklijn (stappen
+   van `schem_stap`) het kwantiel `schem_kwantiel` van de hoogtes.
 2. De kruin: het hoogste punt van dat profiel binnen `schem_kruin_zoekafstand` van de dijklijn.
-3. Het buitentalud (van de buitenzijde tot de kruin) aangepast aan de regels van Hydra-NL
-   (`SchemProfile.maak_hydra_profiel`): hellingen tussen 1:1 en 1:100, geen delen tussen 1:8 en 1:15,
-   hoogstens twee bermen, beginnen en eindigen met een talud.
-4. Weggeschreven als .prfl (versie 4) met `prflcheck` (ProfielCheckPython) en gecontroleerd met de
+3. Eén fit van voorland | talud | (berm | talud) x k | kruin, met de hellingen begrensd volgens de regels van
+   prflcheck, voor 0 tot het maximale aantal bermen. Een berm telt mee volgens de bermcriteria
+   (`schem_min_bermbreedte`, `schem_min_taludhoogte`, `schem_berm_winst_rel` en `schem_berm_winst_abs`); de overige
+   instellingen van de fit zijn `schem_min_taludbreedte`, `schem_stap`, `schem_voorland_fit`,
+   `schem_voorland_delen` en `schem_decimalen`.
+4. Optioneel (`schem_voorland`) het voorland buiten de teen, volgens de regels van prflcheck.
+5. Weggeschreven als .prfl (versie 4) met `prflcheck` (ProfielCheckPython) en gecontroleerd met de
    Hydra/Ringtoets-regels van dat pakket.
 
 De buitenzijde moet bekend zijn (buitenlijn opgegeven of afgeleid): de dwarslijnen beginnen dan aan de
@@ -27,24 +30,11 @@ import re
 import fiona
 import numpy as np
 
-from .profielen import SchemProfile
+from .profielen import schem_cross
 from .profielen.constants import DEFAULT_CROSS_ID, NODATA
 
-XSTEP = 0.1  # [m] grid voor het representatieve profiel
-HYDRA_STEP = 2.0  # [m] minimale breedte van een profieldeel
-RDP_EPS = 0.2  # [m] tolerantie bij het vereenvoudigen
-PRFLCHECK_URL = "https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip"
-
-
-def import_prflcheck():
-    try:
-        import prflcheck
-    except ImportError:
-        raise ImportError(
-            "Voor het schematiseren is het pakket prflcheck (ProfielCheckPython) nodig. Installeer het in de "
-            f"omgeving met: pip install {PRFLCHECK_URL}"
-        ) from None
-    return prflcheck
+PRFLCHECK_URL = schem_cross.PRFLCHECK_URL
+import_prflcheck = schem_cross.laad_prflcheck
 
 
 def read_profiles(path, group_id):
@@ -80,26 +70,25 @@ def mean_direction(angles):
     return round(mean, 1) % 360
 
 
-def find_crest(x, z, zoekafstand):
-    """
-    Kruin: het hoogste punt van de lijn (x, z) met |x| <= `zoekafstand` (afstand tot de dijklijn).
-
-    Kandidaten zijn de knikpunten binnen die afstand en de randen van het zoekgebied (geïnterpoleerd).
-    """
-    lo = max(-zoekafstand, x[0])
-    hi = min(zoekafstand, x[-1])
-    if lo > hi:
-        raise ValueError(f"Het profiel ligt niet binnen {zoekafstand:g} m van de dijklijn")
-    candidates = np.concatenate([[lo, hi], x[(x >= lo) & (x <= hi)]])
-    heights = np.interp(candidates, x, z)
-    i = int(np.argmax(heights))
-    return float(candidates[i]), float(heights[i])
-
-
 def file_name(vak):
     """Bestandsnaam voor een vak: alleen letters, cijfers, '-', '_' en '.'."""
     name = re.sub(r"[^\w.-]+", "_", str(vak), flags=re.ASCII).strip("._")
     return f"{name or 'vak'}.prfl"
+
+
+def fit_instellingen(settings):
+    """Instellingen van de fit (`schem_cross.FitInstellingen`) uit de instellingen `schem_*`."""
+    return schem_cross.FitInstellingen(
+        **{f.name: getattr(settings, "schem_" + f.name) for f in schem_cross.dataclasses.fields(schem_cross.FitInstellingen)}
+    )
+
+
+def _line(x, z, decimals=3):
+    return {"x": _rounded(x, decimals), "z": _rounded(z, decimals)}
+
+
+def _rounded(values, decimals=3):
+    return [round(float(v), decimals) for v in values]
 
 
 def schematise_vak(vak, profiles, settings):
@@ -110,65 +99,70 @@ def schematise_vak(vak, profiles, settings):
         "richting": mean_direction(p["angle"] for p in profiles),
         "representatief": None,
         "kruin": None,
+        "voorland": None,
+        "voorland_verlaagd": 0.0,
         "hydra": None,
-        "aanpassingen": [],
+        "bermen": None,
+        "rmse": None,
         "bestand": None,
         "check": None,
         "fout": None,
     }
-    # Grid binnen het bereik van de dwarslijnen, op hele stappen van XSTEP.
-    half = math.floor(round(settings.cross_length / 2 / XSTEP, 6)) * XSTEP
-    x, z, clean = SchemProfile.maak_geschematiseerd_profiel(
-        [(p["d"], p["z"]) for p in profiles],
-        -half,
-        half,
-        quantile=settings.schem_kwantiel,
-        xstep=XSTEP,
-        rdp_eps=RDP_EPS,
-        min_hydra_step=HYDRA_STEP,
+    inst = fit_instellingen(settings)
+    x, z = schem_cross.representatief_profiel(
+        [(p["d"], p["z"]) for p in profiles], settings.cross_length / 2, settings.schem_kwantiel, inst.stap
     )
-    if clean is None or x is None or len(x) < 2:
+    ok = ~np.isnan(z)
+    if ok.sum() < 2:
         raise ValueError("geen profielen met AHN-hoogtes")
-    result["representatief"] = {"x": _rounded(x), "z": _rounded(z)}
+    result["representatief"] = _line(x[ok], z[ok])
 
-    crest_x, crest_z = find_crest(x, z, settings.schem_kruin_zoekafstand)
-    result["kruin"] = {"x": round(crest_x, 2), "z": round(crest_z, 3)}
+    kruin_x, kruin_z = schem_cross.zoek_kruin(x, z, settings.schem_kruin_zoekafstand)
+    result["kruin"] = {"x": round(kruin_x, 2), "z": round(kruin_z, 3)}
 
-    # Buitentalud tot en met de kruin (de kruin hoeft geen knikpunt te zijn).
-    outside = x < crest_x
-    xb = np.append(x[outside], crest_x)
-    zb = np.append(z[outside], crest_z)
-    if len(xb) < 2:
-        raise ValueError(f"geen buitentalud: de kruin (x = {crest_x:.1f} m) ligt aan het begin van de dwarslijn")
-    xh, zh, _, history = SchemProfile.maak_hydra_profiel(xb, zb, rdp_eps=RDP_EPS, hydra_step=HYDRA_STEP)
-    result["aanpassingen"] = [msg for msg, *_ in history[1:]]
-    if len(xh) < 2:
-        raise ValueError("na het aanpassen aan de Hydra-regels blijft geen buitentalud over")
-    result["hydra"] = {"x": _rounded(xh), "z": _rounded(zh)}
+    gekozen, modellen = schem_cross.fit_profiel(x, z, kruin_x, kruin_z, inst)
+    model = modellen[gekozen]
+    # Dijkpunten: van de teen tot de buitenkruinlijn (zonder het begin van het voorland en de kruintop).
+    result["hydra"] = _line(model["dijk_x"], model["dijk_z"], inst.decimalen)
+    result["bermen"] = gekozen
+    result["rmse"] = {str(k): round(m["rmse"], 3) for k, m in modellen.items()}
+
+    if settings.schem_voorland == "ja":
+        teen_x, teen_z = result["hydra"]["x"][0], result["hydra"]["z"][0]
+        punten, verlaagd = schem_cross.voorland_punten(x, z, teen_x, teen_z, inst)
+        if punten is not None:
+            result["voorland"] = _line(punten[:, 0], punten[:, 1], inst.decimalen)
+            result["voorland_verlaagd"] = verlaagd
     return result
 
 
-def _rounded(values, decimals=3):
-    return [round(float(v), decimals) for v in values]
-
-
 def make_prfl(result, settings, prflcheck):
-    """Profiel (prflcheck) uit het resultaat van `schematise_vak`: alleen dijkpunten, geen voorland of dam."""
-    hydra = result["hydra"]
-    punten = [prflcheck.ProfielPunt(x, z, settings.schem_ruwheid) for x, z in zip(hydra["x"], hydra["z"])]
+    """Profiel (prflcheck) uit het resultaat van `schematise_vak`: voorland (optioneel) en dijk, geen dam."""
+    hydra, voorland = result["hydra"], result["voorland"]
+    r = settings.schem_ruwheid
+    dijk = [prflcheck.ProfielPunt(x, z, r) for x, z in zip(hydra["x"], hydra["z"])]
+    voorland_punten = [prflcheck.ProfielPunt(x, z, r) for x, z in zip(voorland["x"], voorland["z"])] if voorland else []
+    rmse = result["rmse"]
+    bermen = result["bermen"]
     memo = [
         f"Geschematiseerd uit {result['n_profielen']} AHN-profielen van vak {result['vak']} (AHNProfielCreator).",
-        f"Kwantiel {settings.schem_kwantiel:g}, kruin binnen {settings.schem_kruin_zoekafstand:g} m van de dijklijn "
-        f"(x = {result['kruin']['x']:g} m). x = afstand tot de dijklijn [m].",
+        f"x = afstand tot de dijklijn [m]. Kwantiel {settings.schem_kwantiel:g}; kruin binnen "
+        f"{settings.schem_kruin_zoekafstand:g} m van de dijklijn (x = {result['kruin']['x']:g} m).",
+        f"{bermen} berm(en), RMSE {rmse[str(bermen)]:.2f} m (" + ", ".join(f"{k} berm(en): {v:.2f} m" for k, v in rmse.items()) + ").",
     ]
-    if result["aanpassingen"]:
-        memo.append("Aanpassingen: " + "; ".join(dict.fromkeys(result["aanpassingen"])) + ".")
+    if voorland:
+        regel = f"Voorland: {len(voorland['x'])} punten"
+        if result["voorland_verlaagd"] > 0:
+            regel += f"; eerste punt {result['voorland_verlaagd']:.2f} m verlaagd (geen voorlandpunt lager dan het eerste)"
+        memo.append(regel + ".")
     return prflcheck.Profiel(
         id=re.sub(r"\s+", "_", str(result["vak"])),
         richting=result["richting"] if result["richting"] is not None else math.nan,
-        kruinhoogte=round(result["kruin"]["z"], 2),
+        # Naar boven afronden: een lagere kruinhoogte dan het laatste dijkpunt keurt Hydra af (regel 122).
+        kruinhoogte=math.ceil(round(result["kruin"]["z"] * 100, 6)) / 100,
         damhoogte=0.0,
-        dijk_punten=punten,
+        voorland_punten=voorland_punten,
+        dijk_punten=dijk,
         memo="\n".join(memo),
     )
 
@@ -190,6 +184,7 @@ def schematise(settings, logger):
         raise FileNotFoundError(
             f"Er zijn nog geen AHN-profielen ('{settings.output_cross_ahn}'); start eerst de berekening."
         )
+    schem_cross.hydra_grenzen(fit_instellingen(settings))  # Onmogelijke instellingen meteen melden, niet per vak
 
     profiles = read_profiles(settings.output_cross_ahn, settings.group_id)
     out_dir = settings.output_prfl_dir
@@ -212,7 +207,11 @@ def schematise(settings, logger):
         result["bestand"] = file_name(vak)
         profiel.save(os.path.join(out_dir, result["bestand"]))
         if check.code == 0:
-            logger.info(f"Vak {vak}: {len(result['hydra']['x'])} punten, kruin {profiel.kruinhoogte:.2f} m NAP.")
+            voorland = f", voorland {len(result['voorland']['x'])} punten" if result["voorland"] else ""
+            logger.info(
+                f"Vak {vak}: {result['bermen']} berm(en){voorland}, kruin {profiel.kruinhoogte:.2f} m NAP, "
+                f"RMSE {result['rmse'][str(result['bermen'])]:.2f} m."
+            )
         else:
             logger.warning(f"Vak {vak}: profiel voldoet niet aan de Hydra-regels ({check.code}: {check.description})")
         results.append(result)
@@ -242,17 +241,17 @@ def remove_previous(settings):
 def write_summary(settings, results):
     """Overzicht voor de webapp (json) en per vak (csv, met ; voor Excel)."""
     data = {
-        "instellingen": {
-            "kwantiel": settings.schem_kwantiel,
-            "kruin_zoekafstand": settings.schem_kruin_zoekafstand,
-            "ruwheid": settings.schem_ruwheid,
-        },
+        # Alle instellingen schem_* (zonder voorvoegsel), bijv. 'kwantiel'
+        "instellingen": {k[len("schem_") :]: v for k, v in vars(settings).items() if k.startswith("schem_")},
         "vakken": results,
     }
     with open(settings.output_schem, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
 
-    columns = ["vak", "bestand", "n_profielen", "kruinhoogte", "richting", "n_punten", "check", "omschrijving"]
+    columns = [
+        "vak", "bestand", "n_profielen", "kruinhoogte", "richting", "bermen", "n_dijkpunten", "n_voorlandpunten",
+        "voorland_verlaagd", "rmse", "check", "omschrijving",
+    ]
     with open(os.path.splitext(settings.output_schem)[0] + ".csv", "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(columns)
@@ -265,7 +264,11 @@ def write_summary(settings, results):
                     r["n_profielen"],
                     _decimal(r.get("kruinhoogte")),
                     _decimal(r.get("richting")),
+                    "" if r.get("bermen") is None else r["bermen"],
                     len(r["hydra"]["x"]) if r.get("hydra") else "",
+                    len(r["voorland"]["x"]) if r.get("voorland") else "",
+                    _decimal(r.get("voorland_verlaagd") if r.get("voorland") else None),
+                    _decimal(r["rmse"][str(r["bermen"])] if r.get("rmse") else None),
                     check.get("code", ""),
                     check.get("omschrijving") or r.get("fout") or "",
                 ]

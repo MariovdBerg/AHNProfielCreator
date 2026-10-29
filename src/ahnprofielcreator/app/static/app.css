@@ -199,6 +199,8 @@ main {
 #chart .schem-hydra { fill: none; stroke: var(--brand); stroke-width: 3; }
 #chart .schem-point { fill: var(--g-bg); stroke: var(--brand); stroke-width: 2; }
 #chart .schem-crest { fill: var(--brand); }
+#chart .schem-voorland { fill: none; stroke: var(--ok); stroke-width: 2.5; }
+#chart .schem-voorland-point { fill: var(--g-bg); stroke: var(--ok); stroke-width: 2; }
 #chart .legend text { fill: var(--g-text); font-size: 11px; }
 #chart .legend .bad { fill: var(--bad); }
 

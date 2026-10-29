@@ -12,4 +12,3 @@ from . import cross_section, schem_cross
 IntervalPoints = cross_section.IntervalPoints
 CrossSections = cross_section.CrossSections
 CrossSectionHeights = cross_section.CrossSectionHeights
-SchemProfile = schem_cross.SchemProfile

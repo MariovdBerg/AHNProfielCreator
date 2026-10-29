@@ -12,7 +12,7 @@ from conftest import CRS, FakeTiles, write_lines
 
 from ahnprofielcreator import profielen_per_vak as ppv
 from ahnprofielcreator import schematisatie
-from ahnprofielcreator.profielen import SchemProfile
+from ahnprofielcreator.profielen import schem_cross
 from ahnprofielcreator.profielen.schem_cross import rdp
 
 prflcheck = pytest.importorskip("prflcheck")
@@ -51,37 +51,136 @@ def test_rdp_closed_line():
     np.testing.assert_array_equal(rdp(points, 0.1), rdp_reference(points, 0.1))
 
 
-def test_hydra_profile_follows_rules():
-    # Grillig buitentalud: steil stuk, berm tussen 1:8 en 1:15, twee bermen achter elkaar, kleine stappen.
-    x = np.array([-40.0, -30.0, -29.0, -20.0, -10.0, -8.0, -3.0, 0.0])
-    z = np.array([2.0, 2.5, 4.0, 4.7, 5.0, 5.1, 7.0, 8.0])
-    xh, zh, _, history = SchemProfile.maak_hydra_profiel(x, z)
-    assert SchemProfile.hydra_fouten(xh, zh) == []
-    assert np.diff(xh).min() >= 2
-    assert len(history) > 1  # Er is iets aangepast
-    profiel = prflcheck.Profiel(dijk_punten=[prflcheck.ProfielPunt(a, b, 1.0) for a, b in zip(xh, zh)], kruinhoogte=zh[-1])
-    assert profiel.check() == prflcheck.ProfielError.OK
+# ---------- Fit van voorland, talud, bermen en kruin ----------
+
+# Synthetische profielen: knikpunten (x, z) van voorland-begin tot kruintop (x = 2), buitenkruinlijn op x = -2.
+SYNTHETISCH = {
+    0: ([-50, -22, -2, 2], [3.0, 3.2, 9.0, 9.0]),
+    1: ([-50, -40, -30, -15, -4, 2], [2.5, 2.6, 4.6, 4.9, 8.5, 8.6]),  # Brede, flauwe berm (1:50)
+    2: ([-50, -42, -34, -26, -18, -10, -2, 2], [2.0, 2.2, 4.2, 4.52, 6.0, 6.2, 8.8, 8.8]),  # 1:25 en 1:40
+}
 
 
-@pytest.mark.parametrize(
-    "x, z, fout",
-    [
-        ([0, 1], [0, 2], "steiler dan 1:1"),
-        ([0, 10, 12], [0, 0.05, 1], "flauwer dan 1:100"),
-        ([0, 10, 20], [0, 1, 3], "tussen 1:8 en 1:15"),
-        ([0, 2, 22, 42, 44], [0, 1, 2, 3, 4], "twee bermen achter elkaar"),
-        ([0, 20, 22], [0, 1, 3], "begint of eindigt met een berm"),
-    ],
-)
-def test_hydra_fouten(x, z, fout):
-    assert fout in SchemProfile.hydra_fouten(x, z)
+def synthetisch(bermen, ruis, seed=1):
+    kx, kz = SYNTHETISCH[bermen]
+    x = np.arange(-50, 2.01, schem_cross.FitInstellingen().stap)
+    z = np.interp(x, kx, kz) + np.random.default_rng(seed).normal(0, ruis, len(x))
+    return x, z, kx, kz
 
 
-def test_find_crest_within_search_distance():
+@pytest.mark.parametrize("bermen", [0, 1, 2])
+@pytest.mark.parametrize("ruis", [0.05, 0.15])
+def test_fit_finds_number_and_position_of_berms(bermen, ruis):
+    x, z, kx, kz = synthetisch(bermen, ruis)
+    gekozen, modellen = schem_cross.fit_profiel(x, z, 2.0, kz[-1])
+    assert gekozen == bermen
+    model = modellen[gekozen]
+    # Knikpunten van teen tot buitenkruinlijn binnen 1,5 m van de werkelijke
+    np.testing.assert_allclose(model["dijk_x"], kx[1:-1], atol=1.5)
+    assert model["soorten"] == "vt" + "bt" * bermen + "k"
+    assert schem_cross.controleer(model["dijk_x"].round(3), model["dijk_z"].round(3)) == prflcheck.ProfielError.OK
+
+
+def test_berm_criteria_can_reject_berm():
+    x, z, _, kz = synthetisch(1, 0.05)
+    # Met een eis van 5 m hoge taluds naast de berm is de berm van 2 m boven de teen geen berm meer
+    gekozen, modellen = schem_cross.fit_profiel(x, z, 2.0, kz[-1], schem_cross.FitInstellingen(min_taludhoogte=5))
+    assert gekozen == 0 and (1 not in modellen or not modellen[1]["geldig"])
+    # Met een te hoge eis aan de verbetering ook niet
+    gekozen, _ = schem_cross.fit_profiel(x, z, 2.0, kz[-1], schem_cross.FitInstellingen(berm_winst_abs=1.0))
+    assert gekozen == 0
+
+
+def test_fit_respects_slope_limits():
+    # Te steil (1:0.5), te flauw (1:200) en tussen 1:8 en 1:15: het resultaat volgt toch de Hydra-regels.
+    x = np.arange(-40, 0.01, schem_cross.FitInstellingen().stap)
+    z = np.interp(x, [-40, -30, -20, -10, -8, 0], [2.0, 2.05, 3.0, 3.8, 7.8, 8.0])
+    gekozen, modellen = schem_cross.fit_profiel(x, z, 0.0, 8.0)
+    model = modellen[gekozen]
+    assert schem_cross.controleer(model["dijk_x"].round(3), model["dijk_z"].round(3)) == prflcheck.ProfielError.OK
+
+
+def test_voorland_follows_hydra_rules():
+    x = np.arange(-100, -19.99, schem_cross.FitInstellingen().stap)
+    # Uiterwaard op 4 m met een kade (5 m) en een laagte (3 m) bij de teen op x = -20
+    z = np.interp(x, [-100, -70, -65, -60, -30, -25, -20], [4.0, 4.0, 5.0, 4.0, 4.0, 3.0, 3.2])
+    punten, verlaagd = schem_cross.voorland_punten(x, z, -20.0, 3.2)
+    assert punten[-1].tolist() == [-20.0, 3.2]  # Eindigt op de teen
+    dx, dz = np.diff(punten[:, 0]), np.diff(punten[:, 1])
+    assert (dx >= 10).all()
+    assert (np.abs(dz / dx) <= 0.1).all()
+    assert (punten[1:, 1] >= punten[0, 1]).all()  # Geen punt lager dan het eerste
+    assert verlaagd > 0  # De laagte bij de teen ligt lager dan het begin: eerste punt verlaagd
+
+
+def test_voorland_too_short():
+    x = np.arange(-25, -19.99, schem_cross.FitInstellingen().stap)
+    assert schem_cross.voorland_punten(x, np.full(len(x), 3.0), -20.0, 3.0) == (None, 0.0)
+
+
+def test_representative_profile_quantile_and_coverage():
+    d = np.arange(-10, 10.01, 1.0)
+    profielen = [(d, np.full(len(d), h)) for h in (1.0, 2.0, 3.0, 4.0, 5.0)]
+    profielen.append((d, np.full(len(d), np.nan)))
+    x, z = schem_cross.representatief_profiel(profielen, 20, kwantiel=0.5)
+    assert z[x == 0][0] == pytest.approx(3.0)
+    assert np.isnan(z[x == -15][0])  # Buiten de dwarslijnen
+
+
+def test_limits_come_from_prflcheck(monkeypatch):
+    checks = prflcheck.checks
+    inst = schem_cross.FitInstellingen()
+    grenzen = schem_cross.hydra_grenzen(inst)
+    # Binnen de grenzen van prflcheck, met hooguit een kleine marge
+    lo, hi = grenzen.tan["t"]
+    assert checks.TANASTL < lo < checks.TANASTL * 1.05 and checks.TANAMAX * 0.99 < hi < checks.TANAMAX
+    lo, hi = grenzen.tan["b"]
+    assert checks.TANAMIN < lo < checks.TANAMIN * 1.05 and checks.TANAFLW * 0.98 < hi < checks.TANAFLW
+    assert checks.TANAMINVOORLAND * 0.99 < grenzen.voorland_tan < checks.TANAMINVOORLAND
+    assert grenzen.max_bermen == checks.NBERMEN and grenzen.min_voorland == checks.DELTAXMINVOORLAND
+    # Een wijziging in prflcheck werkt door
+    monkeypatch.setattr(checks, "TANASTL", 1 / 6)
+    monkeypatch.setattr(checks, "NBERMEN", 1)
+    grenzen = schem_cross.hydra_grenzen(inst)
+    assert 1 / 6 < grenzen.tan["t"][0] < 1 / 5.9 and grenzen.max_bermen == 1
+    x, z, _, kz = synthetisch(2, 0.05)
+    gekozen, modellen = schem_cross.fit_profiel(x, z, 2.0, kz[-1])
+    assert gekozen <= 1 and max(modellen) == 1
+
+
+def test_too_few_decimals_for_limits():
+    with pytest.raises(ValueError, match="decimalen"):
+        schem_cross.hydra_grenzen(schem_cross.FitInstellingen(decimalen=1))
+
+
+def test_ruwheid_limits_from_prflcheck(monkeypatch):
+    monkeypatch.setattr(prflcheck.checks, "RUWHEIDLAAG", 0.7)
+    with pytest.raises(ValueError, match="schem_ruwheid"):
+        ppv.Settings(cur_dir="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_ruwheid=0.6)
+
+
+def test_fit_settings_are_used(tmp_path):
+    x, z, _, kz = synthetisch(1, 0.05)
+    gekozen, modellen = schem_cross.fit_profiel(x, z, 2.0, kz[-1], schem_cross.FitInstellingen(stap=1.0, decimalen=2))
+    assert gekozen == 1
+    assert np.allclose(modellen[1]["knopen"] % 1.0, 0)  # Knikpunten op het raster van 1 m
+    model = modellen[1]
+    assert schem_cross.controleer(model["dijk_x"].round(2), model["dijk_z"].round(2)) == prflcheck.ProfielError.OK
+    gekozen, modellen = schem_cross.fit_profiel(x, z, 2.0, kz[-1], schem_cross.FitInstellingen(voorland_delen=2))
+    assert modellen[0]["soorten"] == "vvtk"
+    settings = ppv.Settings(
+        cur_dir="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_stap=1, schem_decimalen=2,
+        schem_min_taludbreedte=3, schem_voorland_fit=20, schem_voorland_delen=2,
+    )
+    inst = schematisatie.fit_instellingen(settings)
+    assert (inst.stap, inst.decimalen, inst.min_taludbreedte, inst.voorland_fit, inst.voorland_delen) == (1, 2, 3, 20, 2)
+
+
+def test_zoek_kruin_within_search_distance():
     x = np.array([-30.0, -2.0, 2.0, 25.0, 30.0])
     z = np.array([2.0, 6.0, 6.0, 4.0, 9.0])  # Hoger punt op 30 m (buiten het zoekgebied)
-    assert schematisatie.find_crest(x, z, 10) == (-2.0, 6.0)
-    assert schematisatie.find_crest(x, z, 40) == (30.0, 9.0)
+    assert schem_cross.zoek_kruin(x, z, 10) == (-2.0, 6.0)  # Bij gelijke hoogte het verst naar buiten
+    assert schem_cross.zoek_kruin(x, z, 40) == (30.0, 9.0)
 
 
 def test_mean_direction_around_north():
@@ -133,7 +232,7 @@ def dike_settings(tmp_path, dike_tif, monkeypatch):
         outside_offset=5,
         outside_side="rechts",  # Rechts van een lijn naar het oosten = zuid
         interval_length=10,
-        cross_length=60,
+        cross_length=80,  # 40 m buiten: 20 m voorland voor de teen
         ahn_stepsize=0.5,
     )
 
@@ -146,7 +245,8 @@ def test_schematise_dike(dike_settings):
     assert result["n_profielen"] == 8
     assert result["richting"] == pytest.approx(180, abs=0.5)  # Buitenzijde in het zuiden
     hydra = result["hydra"]
-    # Eén talud van teen tot kruin (het vlakke voorland is geen berm aan het begin).
+    # Eén talud van teen tot kruin (het vlakke voorland is geen berm), voorland van 20 m tot de teen.
+    assert result["bermen"] == 0
     assert len(hydra["x"]) == 2
     assert hydra["x"][0] == pytest.approx(-TOE, abs=1)
     assert hydra["z"][0] == pytest.approx(Z_TOE, abs=0.1)
@@ -160,6 +260,10 @@ def test_schematise_dike(dike_settings):
     assert profiel.check() == prflcheck.ProfielError.OK
     assert profiel.id == "A" and profiel.richting == pytest.approx(180, abs=0.5)
     assert profiel.kruinhoogte == pytest.approx(Z_CREST, abs=0.1)
+    voorland = result["voorland"]
+    assert voorland["x"][0] == pytest.approx(-40, abs=0.5) and voorland["x"][-1] == hydra["x"][0]
+    assert voorland["z"] == pytest.approx([Z_TOE] * len(voorland["z"]), abs=0.05)
+    assert profiel.voorland == len(voorland["x"])
     with open(dike_settings.output_schem, encoding="utf-8") as f:
         assert json.load(f)["vakken"][0]["bestand"] == "A.prfl"
     assert os.path.isfile(dike_settings.output_schem.replace(".json", ".csv"))
@@ -199,10 +303,21 @@ def test_main_schematiseren(dike_settings, tmp_path):
         [
             "--cur-dir", dike_settings.cur_dir, "--input-line", dike_settings.input_line,
             "--ahn-file-loc", str(tmp_path), "--outside-offset", "5", "--outside-side", "rechts",
-            "--cross-length", "60", "--schematiseren", "--schem-kwantiel", "0.5",
+            "--cross-length", "60", "--schematiseren", "--schem-kwantiel", "0.5", "--schem-voorland", "nee",
         ]
     )
     with open(dike_settings.output_schem, encoding="utf-8") as f:
         data = json.load(f)
     assert data["instellingen"]["kwantiel"] == 0.5
     assert data["vakken"][0]["check"]["code"] == 0
+    assert data["instellingen"]["voorland"] == "nee" and data["vakken"][0]["voorland"] is None
+
+
+def test_works_without_prflcheck(monkeypatch):
+    """Zonder prflcheck werkt alles behalve het schematiseren, met een duidelijke melding."""
+    for name in ("prflcheck", "prflcheck.checks"):
+        monkeypatch.setitem(__import__("sys").modules, name, None)  # import faalt
+    settings = ppv.Settings(cur_dir="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_ruwheid=0.3)
+    assert settings.schem_ruwheid == 0.3  # Zonder prflcheck geen grenzen voor de ruwheid
+    with pytest.raises(ImportError, match="pip install"):
+        schem_cross.hydra_grenzen(schem_cross.FitInstellingen())

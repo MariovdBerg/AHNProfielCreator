@@ -37,6 +37,15 @@ def test_normalisation():
         ("schem_kwantiel", 1.5),
         ("schem_ruwheid", 0.3),
         ("schem_kruin_zoekafstand", 0),
+        ("schem_voorland", "misschien"),
+        ("schem_berm_winst_rel", 2),
+        ("schem_min_bermbreedte", -1),
+        ("schem_min_taludbreedte", 0),
+        ("schem_stap", 0),
+        ("schem_voorland_fit", -1),
+        ("schem_voorland_delen", 0),
+        ("schem_voorland_delen", 1.5),
+        ("schem_decimalen", 7),
     ],
 )
 def test_invalid_settings(field, value):

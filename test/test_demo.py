@@ -30,7 +30,8 @@ def test_demo_runs_offline(tmp_path, offline, logs):
     profiles = read_rows(s.output_cross_ahn)
     assert len(profiles) == 60  # 3 km, om de 50 m
     z = np.array([c[2] for geom, _ in profiles for c in geom.coords])
-    assert np.mean(z == NODATA) < 0.05
+    # Dwarslijnen van 200 m: bij een paar vakken ligt de Lek binnen 100 m van de dijk (water: geen AHN), ~8%
+    assert np.mean(z == NODATA) < 0.1
     assert 8 < z[z != NODATA].max() < 12  # Kruin van de Lekdijk ~9 m NAP
     assert not [m for m in logs() if "geen hoogte" in m or "AHN4" in m]
 

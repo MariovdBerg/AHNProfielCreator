@@ -22,13 +22,27 @@ const LABELS = {
   schem_kwantiel: "Kwantiel hoogtes per vak [-]",
   schem_kruin_zoekafstand: "Kruin zoeken binnen [m] van dijklijn",
   schem_ruwheid: "Ruwheid talud [-]",
+  schem_voorland: "Voorland in .prfl",
+  schem_min_bermbreedte: "Berm: minimale breedte [m]",
+  schem_min_taludhoogte: "Berm: taluds ernaast minstens [m] hoog",
+  schem_berm_winst_rel: "Berm: RMSE daalt minstens [fractie]",
+  schem_berm_winst_abs: "Berm: én RMSE daalt minstens [m]",
+  schem_min_taludbreedte: "Talud: minimale breedte [m]",
+  schem_stap: "Raster schematisatie [m]",
+  schem_voorland_fit: "Voorland in fit tot [m] buiten teen",
+  schem_voorland_delen: "Delen voorland in fit",
+  schem_decimalen: "Decimalen x en z in .prfl",
 };
 // Categorieën in het instellingenpaneel, in deze volgorde; onbekende velden komen bij de bronnen.
 const GROUPS = {
   bronnen: ["cur_dir", "input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
   ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
   dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
-  schematisatie: ["schem_kwantiel", "schem_kruin_zoekafstand", "schem_ruwheid"],
+  schematisatie: [
+    "schem_kwantiel", "schem_kruin_zoekafstand", "schem_ruwheid", "schem_voorland",
+    "schem_min_bermbreedte", "schem_min_taludhoogte", "schem_berm_winst_rel", "schem_berm_winst_abs",
+    "schem_min_taludbreedte", "schem_stap", "schem_voorland_fit", "schem_voorland_delen", "schem_decimalen",
+  ],
 };
 // Velden met een vaste keuze; leeg = standaardwaarde.
 const OPTIONS = {
@@ -36,6 +50,8 @@ const OPTIONS = {
   model: ["DTM", "DSM"],
   model_resolutie: ["0.5", "5"],
   outside_side: ["links", "rechts"],
+  schem_voorland: ["ja", "nee"],
+  schem_voorland_delen: ["1", "2", "3"],
 };
 const FILE_LABELS = {
   vakken: "Dijkvakken",
@@ -505,7 +521,7 @@ function drawChart() {
   const shown = $("show-others").checked ? data.profiles : [profile];
   // Schematisatie van het vak: representatief profiel en Hydra-NL profiel (lijnen met x en z).
   const schem = $("show-schem").checked && data.schem && !data.schem.fout ? data.schem : null;
-  const schemLines = schem ? [schem.representatief, schem.hydra].filter(Boolean) : [];
+  const schemLines = schem ? [schem.representatief, schem.hydra, schem.voorland].filter(Boolean) : [];
   let dMin = Infinity, dMax = -Infinity, zMin = Infinity, zMax = -Infinity;
   for (const p of [...shown, ...schemLines.map((l) => ({ d: l.x, z: l.z }))]) {
     for (let i = 0; i < p.d.length; i++) {
@@ -536,18 +552,20 @@ function drawChart() {
   const line = (l) => l.x.map((v, i) => `${i ? "L" : "M"}${x(v).toFixed(1)},${y(l.z[i]).toFixed(1)}`).join("");
   let schemSvg = "";
   if (schem) {
-    const hydra = schem.hydra;
-    const check = schem.check;
+    const { hydra, voorland, check } = schem;
     const ok = check && check.code === 0;
+    const points = (l, cls) => l.x.map((v, i) => `<circle class="${cls}" r="3.5" cx="${x(v)}" cy="${y(l.z[i])}"/>`).join("");
+    const bermen = schem.bermen === null || schem.bermen === undefined ? "" : `, ${schem.bermen} berm(en)`;
     schemSvg = `
       <path class="schem-repr" d="${line(schem.representatief)}"/>
-      ${hydra ? `<path class="schem-hydra" d="${line(hydra)}"/>` : ""}
-      ${hydra ? hydra.x.map((v, i) => `<circle class="schem-point" r="3.5" cx="${x(v)}" cy="${y(hydra.z[i])}"/>`).join("") : ""}
+      ${voorland ? `<path class="schem-voorland" d="${line(voorland)}"/>${points(voorland, "schem-voorland-point")}` : ""}
+      ${hydra ? `<path class="schem-hydra" d="${line(hydra)}"/>${points(hydra, "schem-point")}` : ""}
       <circle class="schem-crest" r="4" cx="${x(schem.kruin.x)}" cy="${y(schem.kruin.z)}"/>
       <g class="legend" transform="translate(${m.left + 8} ${m.top + 30})">
         <line class="schem-repr" x1="0" x2="22" y1="0" y2="0"/><text x="28" y="4">representatief profiel (kwantiel ${data.schem_kwantiel ?? "?"})</text>
         <line class="schem-hydra" x1="0" x2="22" y1="16" y2="16"/>
-        <text x="28" y="20" class="${ok ? "" : "bad"}">${escapeHtml(schem.bestand || "")}${check ? `: ${ok ? "OK" : `fout ${check.code}`}` : ""}</text>
+        <text x="28" y="20" class="${ok ? "" : "bad"}">${escapeHtml(schem.bestand || "")}${bermen}${check ? `: ${ok ? "OK" : `fout ${check.code}`}` : ""}</text>
+        ${voorland ? `<line class="schem-voorland" x1="0" x2="22" y1="32" y2="32"/><text x="28" y="36">voorland${schem.voorland_verlaagd > 0 ? ` (eerste punt ${schem.voorland_verlaagd.toFixed(2)} m verlaagd)` : ""}</text>` : ""}
       </g>`;
   }
 

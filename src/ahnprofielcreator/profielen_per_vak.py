@@ -22,6 +22,7 @@ import argparse
 import configparser
 import dataclasses
 import logging
+import math
 import os
 import sys
 from typing import Optional
@@ -55,25 +56,57 @@ class Settings:
     model_resolutie: float = 0.5  # [m] resolutie van het AHN-model: 0.5 of 5
     # Instellingen
     interval_length: float = 10  # [m] per meter langs normtraject
-    cross_length: float = 100.0  # [m] lengte dwarsdoorsnede (helft naar beide kanten)
+    # [m] lengte dwarsdoorsnede (helft naar beide kanten); 100 m buiten past bij HR-locaties op ~100 m van de kruin
+    cross_length: float = 200.0
     ahn_stepsize: float = 0.5  # [m] stapgrootte voor AHN hoogte
     # Schematisatie tot een Hydra-NL profiel (.prfl) per vak (optionele stap na de berekening)
     schem_kwantiel: float = 0.2  # [-] kwantiel van de hoogtes van de profielen in een vak
     schem_kruin_zoekafstand: float = 10.0  # [m] zoek de kruin binnen deze afstand van de dijklijn
-    schem_ruwheid: float = 1.0  # [-] ruwheid van het talud (0.5 - 1.0)
+    schem_ruwheid: float = 1.0  # [-] ruwheid van het talud (grenzen uit prflcheck: 0.5 - 1.0)
+    schem_voorland: str = "ja"  # Voorland (buiten de teen) in het .prfl: ja of nee
+    schem_min_bermbreedte: float = 3.0  # [m] een berm is minstens zo breed
+    schem_min_taludhoogte: float = 0.5  # [m] de taluds naast een berm zijn minstens zo hoog
+    # Een berm telt alleen mee als de afwijking (RMSE) van het profiel er zowel relatief als absoluut zoveel door daalt
+    schem_berm_winst_rel: float = 0.2  # [-] fractie, 0.2 = 20%
+    schem_berm_winst_abs: float = 0.03  # [m]
+    # Overige instellingen van de fit
+    schem_min_taludbreedte: float = 2.0  # [m] een talud is minstens zo breed
+    schem_stap: float = 0.5  # [m] raster van de knikpunten en van het representatieve profiel
+    # [m] in de fit telt alleen het voorland tot zover (plus de dijkbreedte) buiten de eerst gevonden teen
+    schem_voorland_fit: float = 30.0
+    schem_voorland_delen: int = 1  # Delen voorland in de fit (alleen om de teen te vinden)
+    schem_decimalen: int = 3  # Afronding van x en z in het .prfl
 
     def __post_init__(self):
         """Controleer de instellingen, zodat fouten meteen met een duidelijke melding opvallen."""
-        for name in ("interval_length", "cross_length", "ahn_stepsize", "schem_kruin_zoekafstand"):
+        positief = ("interval_length", "cross_length", "ahn_stepsize", "schem_kruin_zoekafstand",
+                    "schem_min_taludbreedte", "schem_stap")
+        for name in positief:
             value = float(getattr(self, name))
             if not value > 0:  # Ook NaN afkeuren
                 raise ValueError(f"'{name}' moet groter dan 0 zijn (is {value:g})")
             setattr(self, name, value)
-        for name, low, high in (("schem_kwantiel", 0.0, 1.0), ("schem_ruwheid", 0.5, 1.0)):
+        for name, low, high in (
+            ("schem_kwantiel", 0.0, 1.0),
+            ("schem_ruwheid", *ruwheid_grenzen()),
+            ("schem_min_bermbreedte", 0.0, math.inf),
+            ("schem_min_taludhoogte", 0.0, math.inf),
+            ("schem_berm_winst_rel", 0.0, 1.0),
+            ("schem_berm_winst_abs", 0.0, math.inf),
+            ("schem_voorland_fit", 0.0, math.inf),
+        ):
             value = float(getattr(self, name))
             if not low <= value <= high:
                 raise ValueError(f"'{name}' moet tussen {low:g} en {high:g} liggen (is {value:g})")
             setattr(self, name, value)
+        for name, low, high in (("schem_voorland_delen", 1, 3), ("schem_decimalen", 1, 6)):
+            value = float(getattr(self, name))
+            if not (value == int(value) and low <= value <= high):
+                raise ValueError(f"'{name}' moet een geheel getal van {low} tot en met {high} zijn (is {value:g})")
+            setattr(self, name, int(value))
+        self.schem_voorland = str(self.schem_voorland).strip().lower()
+        if self.schem_voorland not in ("ja", "nee"):
+            raise ValueError(f"'schem_voorland' moet ja of nee zijn (is '{self.schem_voorland}')")
         self.outside_offset = float(self.outside_offset or 0.0)
         if not self.outside_offset >= 0:
             raise ValueError(f"'outside_offset' mag niet negatief zijn (is {self.outside_offset:g})")
@@ -112,6 +145,19 @@ class Settings:
         return outside_line(
             self.cur_dir, self.interval_length, self.input_line_outside, self.outside_offset
         )
+
+
+def ruwheid_grenzen():
+    """
+    Grenzen voor de ruwheid van een dijkdeel uit de controle van prflcheck (RUWHEIDLAAG, RUWHEIDHOOG).
+
+    prflcheck is alleen nodig voor het schematiseren; zonder dat pakket alleen 'groter dan 0'.
+    """
+    try:
+        import prflcheck.checks as checks
+    except ImportError:
+        return 1e-12, math.inf
+    return checks.RUWHEIDLAAG, checks.RUWHEIDHOOG
 
 
 OUTPUT_POINTS = "cross_points.shp"
@@ -341,7 +387,7 @@ def parse_args(argv=None):
     parser.add_argument("--model", help="DTM of DSM (standaard: DTM)")
     parser.add_argument("--model-resolutie", type=float, help="[m] resolutie AHN-model, 0.5 of 5 (standaard: 0.5)")
     parser.add_argument("--interval-length", type=float, help="[m] afstand tussen profielen (standaard: 10)")
-    parser.add_argument("--cross-length", type=float, help="[m] lengte dwarsdoorsnede (standaard: 100)")
+    parser.add_argument("--cross-length", type=float, help="[m] lengte dwarsdoorsnede (standaard: 200)")
     parser.add_argument("--ahn-stepsize", type=float, help="[m] stapgrootte voor AHN hoogte (standaard: 0.5)")
     parser.add_argument(
         "--schematiseren",
@@ -353,6 +399,24 @@ def parse_args(argv=None):
         "--schem-kruin-zoekafstand", type=float, help="[m] zoek de kruin binnen deze afstand van de dijklijn (standaard: 10)"
     )
     parser.add_argument("--schem-ruwheid", type=float, help="ruwheid van het talud, 0.5 - 1.0 (standaard: 1.0)")
+    parser.add_argument("--schem-voorland", choices=("ja", "nee"), help="voorland in het .prfl (standaard: ja)")
+    parser.add_argument("--schem-min-bermbreedte", type=float, help="[m] minimale breedte van een berm (standaard: 3)")
+    parser.add_argument(
+        "--schem-min-taludhoogte", type=float, help="[m] minimale hoogte van de taluds naast een berm (standaard: 0.5)"
+    )
+    parser.add_argument(
+        "--schem-berm-winst-rel", type=float, help="berm telt mee als de RMSE minstens deze fractie daalt (standaard: 0.2)"
+    )
+    parser.add_argument(
+        "--schem-berm-winst-abs", type=float, help="[m] en ook minstens zoveel daalt (standaard: 0.03)"
+    )
+    parser.add_argument("--schem-min-taludbreedte", type=float, help="[m] minimale breedte van een talud (standaard: 2)")
+    parser.add_argument("--schem-stap", type=float, help="[m] raster van de schematisatie (standaard: 0.5)")
+    parser.add_argument(
+        "--schem-voorland-fit", type=float, help="[m] voorland in de fit tot zover buiten de teen (standaard: 30)"
+    )
+    parser.add_argument("--schem-voorland-delen", type=int, help="delen voorland in de fit, 1-3 (standaard: 1)")
+    parser.add_argument("--schem-decimalen", type=int, help="decimalen van x en z in het .prfl, 1-6 (standaard: 3)")
     return parser, parser.parse_args(argv)
 
 
