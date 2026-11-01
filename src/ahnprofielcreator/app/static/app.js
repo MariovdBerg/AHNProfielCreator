@@ -19,12 +19,30 @@ const LABELS = {
   interval_length: "Interval [m]",
   cross_length: "Lengte dwarslijn [m]",
   ahn_stepsize: "Stapgrootte AHN [m]",
+  schem_kwantiel: "Kwantiel hoogtes per vak [-]",
+  schem_kruin_zoekafstand: "Kruin zoeken binnen [m] van dijklijn",
+  schem_ruwheid: "Ruwheid talud [-]",
+  schem_voorland: "Voorland in .prfl",
+  schem_min_bermbreedte: "Berm: minimale breedte [m]",
+  schem_min_taludhoogte: "Berm: taluds ernaast minstens [m] hoog",
+  schem_berm_winst_rel: "Berm: RMSE daalt minstens [fractie]",
+  schem_berm_winst_abs: "Berm: én RMSE daalt minstens [m]",
+  schem_min_taludbreedte: "Talud: minimale breedte [m]",
+  schem_stap: "Raster schematisatie [m]",
+  schem_voorland_fit: "Voorland in fit tot [m] buiten teen",
+  schem_voorland_delen: "Delen voorland in fit",
+  schem_decimalen: "Decimalen x en z in .prfl",
 };
 // Categorieën in het instellingenpaneel, in deze volgorde; onbekende velden komen bij de bronnen.
 const GROUPS = {
   bronnen: ["cur_dir", "input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
   ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
   dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
+  schematisatie: [
+    "schem_kwantiel", "schem_kruin_zoekafstand", "schem_ruwheid", "schem_voorland",
+    "schem_min_bermbreedte", "schem_min_taludhoogte", "schem_berm_winst_rel", "schem_berm_winst_abs",
+    "schem_min_taludbreedte", "schem_stap", "schem_voorland_fit", "schem_voorland_delen", "schem_decimalen",
+  ],
 };
 // Velden met een vaste keuze; leeg = standaardwaarde.
 const OPTIONS = {
@@ -32,6 +50,8 @@ const OPTIONS = {
   model: ["DTM", "DSM"],
   model_resolutie: ["0.5", "5"],
   outside_side: ["links", "rechts"],
+  schem_voorland: ["ja", "nee"],
+  schem_voorland_delen: ["1", "2", "3"],
 };
 const FILE_LABELS = {
   vakken: "Dijkvakken",
@@ -39,6 +59,16 @@ const FILE_LABELS = {
   punten: "Intervalpunten",
   dwarslijnen: "Dwarslijnen",
   profielen: "AHN-profielen",
+  schematisatie: "Schematisatie (.prfl)",
+};
+
+const TASK_LABELS = {
+  buitenlijn: "Buitenlijn genereren",
+  punten: "Intervalpunten genereren",
+  dwarslijnen: "Dwarslijnen genereren",
+  profielen: "AHN-profielen genereren",
+  berekening: "Berekening",
+  schematisatie: "Schematiseren",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -89,8 +119,9 @@ const state = {
   layers: {},
   vakIndex: new Map(),
   colorMode: "vak",
-  profiles: new Map(), // vak -> {outside, profiles}
+  profiles: new Map(), // vak -> {outside, profiles, schem, schem_stale}
   selected: null, // {vak, index}
+  running: false,
 };
 
 // ---------- Kaart ----------
@@ -286,6 +317,12 @@ function renderSettings(info) {
     div.appendChild(input);
     $(`fields-${group}`).appendChild(div);
   }
+  const note = $("demo-note");
+  note.hidden = !info.demo;
+  note.textContent = info.demo
+    ? `Demo: ${info.demo}, met een meegeleverde AHN5-strook (geen download nodig). ` +
+      "Klik op Berekening starten, of vul eigen bestanden in."
+    : "";
   renderFiles(info.files);
 }
 
@@ -295,8 +332,42 @@ function renderFiles(files) {
     const status = !file.path ? "missing" : file.exists ? "ok" : "missing";
     const mark = file.exists ? "✓" : "✗";
     const title = file.path ? escapeHtml(file.path) : "niet ingesteld";
-    return `<li class="${status}" title="${title}"><span class="mark">${mark}</span><span class="name">${label}</span></li>`;
+    const stale = key === "schematisatie" && file.exists && state.settings.schem_stale ? " (verouderd)" : "";
+    return `<li class="${status}" title="${title}"><span class="mark">${mark}</span><span class="name">${label}${stale}</span></li>`;
   }).join("");
+  updateButtons();
+}
+
+// Een stap kan pas als de uitvoer van de vorige stap er is; niets starten tijdens een berekening.
+function updateButtons() {
+  const files = state.settings ? state.settings.files : {};
+  const exists = (key) => Boolean(files[key] && files[key].exists);
+  const value = (name) => state.settings?.fields.find((field) => field.name === name)?.value;
+  const outsideGiven = Boolean(value("input_line_outside"));
+  const offset = Number(value("outside_offset")) > 0;
+  $("btn-run").disabled = state.running;
+  $("btn-validate").disabled = state.running;
+  $("btn-outside").disabled = state.running || outsideGiven || !offset;
+  $("btn-outside").title = outsideGiven
+    ? "Er is een buitenlijn (.shp) opgegeven; die wordt gebruikt"
+    : offset
+      ? "Leid de buitenlijn af uit de dijkvakken, om op de kaart te controleren"
+      : "Vul eerst een afstand in voor de afgeleide buitenlijn (en valideer)";
+  $("btn-points").disabled = state.running;
+  $("btn-cross").disabled = state.running || !exists("punten");
+  $("btn-cross").title = "Stap 2: dwarslijnen door de intervalpunten" + (exists("punten") ? "" : " (genereer eerst de intervalpunten)");
+  $("btn-profiles").disabled = state.running || !exists("dwarslijnen");
+  $("btn-profiles").title = "Stap 3: AHN-hoogtes langs de dwarslijnen" + (exists("dwarslijnen") ? "" : " (genereer eerst de dwarslijnen)");
+  $("btn-schem").disabled = state.running || !exists("profielen");
+}
+
+// Korte melding in het statusvak (zonder log), bijv. na valideren of opslaan.
+function showStatus(kind, text) {
+  const status = $("run-status");
+  status.hidden = false;
+  status.className = `status ${kind}`;
+  status.textContent = text;
+  $("run-log").hidden = true;
 }
 
 function formValues() {
@@ -305,9 +376,25 @@ function formValues() {
   return values;
 }
 
-async function applySettings() {
+async function validateSettings() {
   renderSettings(await api("/api/settings", formValues()));
   await loadLayers();
+}
+
+// Valideer en sla op; vraagt om het pad (voorstel: het INI-bestand waarmee de app gestart is).
+async function saveSettings() {
+  await validateSettings();
+  const path = window.prompt("Instellingen opslaan in (.ini):", state.settings.config_path || "config.ini");
+  if (!path) return;
+  let result;
+  try {
+    result = await api("/api/save", { path });
+  } catch (e) {
+    if (!e.message.endsWith("bestaat al.") || !window.confirm(`${e.message} Overschrijven?`)) throw e;
+    result = await api("/api/save", { path, overwrite: true });
+  }
+  state.settings.config_path = result.path;
+  showStatus("done", `Instellingen opgeslagen in '${result.path}'.`);
 }
 
 async function loadLayers() {
@@ -335,21 +422,23 @@ async function loadLayers() {
 function setRunStatus(run) {
   const status = $("run-status");
   const log = $("run-log");
-  const labels = { running: "Berekening loopt…", done: "Berekening klaar.", error: run.message };
+  const what = TASK_LABELS[run.task] || "Berekening";
+  const labels = { running: `${what} loopt…`, done: `${what} klaar.`, error: run.message };
   status.hidden = run.state === "idle";
   status.className = `status ${run.state}`;
   status.textContent = labels[run.state] || "";
   log.hidden = run.log.length === 0;
   log.textContent = run.log.join("\n");
   log.scrollTop = log.scrollHeight;
-  $("btn-run").disabled = run.state === "running";
-  $("btn-apply").disabled = run.state === "running";
+  state.running = run.state === "running";
+  updateButtons();
 }
 
-async function startRun() {
+// Berekening, een losse stap of de schematisatie starten (zie TASK_LABELS), met de instellingen uit het formulier.
+async function startRun(task = "berekening") {
   try {
     renderSettings(await api("/api/settings", formValues()));
-    setRunStatus(await api("/api/run", {}));
+    setRunStatus(await api("/api/run", { task }));
   } catch (e) {
     setRunStatus({ state: "error", message: e.message, log: [] });
     return;
@@ -446,6 +535,17 @@ function pathData(profile, x, y) {
   return d;
 }
 
+// Korte status van de schematisatie van het vak, voor achter de titel.
+function schemStatus(data) {
+  const schem = data.schem;
+  if (!schem) return "";
+  const stale = data.schem_stale ? " (verouderd, schematiseer opnieuw)" : "";
+  if (schem.fout) return ` · niet geschematiseerd: ${schem.fout}${stale}`;
+  const check = schem.check;
+  const result = !check ? "" : check.code === 0 ? "OK" : `fout ${check.code}: ${check.omschrijving}`;
+  return ` · ${schem.bestand}: ${result}, kruin ${schem.kruinhoogte} m NAP, richting ${schem.richting}°${stale}`;
+}
+
 function drawChart() {
   const el = $("chart");
   const title = $("profile-title");
@@ -465,11 +565,14 @@ function drawChart() {
   }
 
   const profile = data.profiles[index];
-  title.textContent = `Vak ${vak} – dwarslijn ${profile.id} (${index + 1} van ${data.profiles.length})`;
+  title.textContent = `Vak ${vak} – dwarslijn ${profile.id} (${index + 1} van ${data.profiles.length})${schemStatus(data)}`;
 
   const shown = $("show-others").checked ? data.profiles : [profile];
+  // Schematisatie van het vak: representatief profiel en Hydra-NL profiel (lijnen met x en z).
+  const schem = $("show-schem").checked && data.schem && !data.schem.fout ? data.schem : null;
+  const schemLines = schem ? [schem.representatief, schem.hydra, schem.voorland].filter(Boolean) : [];
   let dMin = Infinity, dMax = -Infinity, zMin = Infinity, zMax = -Infinity;
-  for (const p of shown) {
+  for (const p of [...shown, ...schemLines.map((l) => ({ d: l.x, z: l.z }))]) {
     for (let i = 0; i < p.d.length; i++) {
       dMin = Math.min(dMin, p.d[i]);
       dMax = Math.max(dMax, p.d[i]);
@@ -495,6 +598,25 @@ function drawChart() {
     ? `<text class="axis-label" x="${m.left + 4}" y="${m.top + 12}">← buiten</text>
        <text class="axis-label" x="${width - m.right - 4}" y="${m.top + 12}" text-anchor="end">binnen →</text>`
     : "";
+  const line = (l) => l.x.map((v, i) => `${i ? "L" : "M"}${x(v).toFixed(1)},${y(l.z[i]).toFixed(1)}`).join("");
+  let schemSvg = "";
+  if (schem) {
+    const { hydra, voorland, check } = schem;
+    const ok = check && check.code === 0;
+    const points = (l, cls) => l.x.map((v, i) => `<circle class="${cls}" r="3.5" cx="${x(v)}" cy="${y(l.z[i])}"/>`).join("");
+    const bermen = schem.bermen === null || schem.bermen === undefined ? "" : `, ${schem.bermen} berm(en)`;
+    schemSvg = `
+      <path class="schem-repr" d="${line(schem.representatief)}"/>
+      ${voorland ? `<path class="schem-voorland" d="${line(voorland)}"/>${points(voorland, "schem-voorland-point")}` : ""}
+      ${hydra ? `<path class="schem-hydra" d="${line(hydra)}"/>${points(hydra, "schem-point")}` : ""}
+      <circle class="schem-crest" r="4" cx="${x(schem.kruin.x)}" cy="${y(schem.kruin.z)}"/>
+      <g class="legend" transform="translate(${m.left + 8} ${m.top + 30})">
+        <line class="schem-repr" x1="0" x2="22" y1="0" y2="0"/><text x="28" y="4">representatief profiel (kwantiel ${data.schem_kwantiel ?? "?"})</text>
+        <line class="schem-hydra" x1="0" x2="22" y1="16" y2="16"/>
+        <text x="28" y="20" class="${ok ? "" : "bad"}">${escapeHtml(schem.bestand || "")}${bermen}${check ? `: ${ok ? "OK" : `fout ${check.code}`}` : ""}</text>
+        ${voorland ? `<line class="schem-voorland" x1="0" x2="22" y1="32" y2="32"/><text x="28" y="36">voorland${schem.voorland_verlaagd > 0 ? ` (eerste punt ${schem.voorland_verlaagd.toFixed(2)} m verlaagd)` : ""}</text>` : ""}
+      </g>`;
+  }
 
   el.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}">
@@ -512,6 +634,7 @@ function drawChart() {
       ${sides}
       ${others}
       <path class="selected" stroke="${color}" d="${pathData(profile, x, y)}"/>
+      ${schemSvg}
       <line class="cursor" y1="${m.top}" y2="${height - m.bottom}" visibility="hidden"/>
       <circle class="dot" r="4" fill="${color}" visibility="hidden"/>
       <rect x="${m.left}" y="${m.top}" width="${width - m.left - m.right}" height="${height - m.top - m.bottom}" fill="transparent"/>
@@ -556,12 +679,25 @@ function drawChart() {
 $("settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    await applySettings();
+    await validateSettings();
+    showStatus("done", "Instellingen gecontroleerd.");
   } catch (e) {
     setRunStatus({ state: "error", message: e.message, log: [] });
   }
 });
-$("btn-run").addEventListener("click", startRun);
+$("btn-save").addEventListener("click", async () => {
+  try {
+    await saveSettings();
+  } catch (e) {
+    setRunStatus({ state: "error", message: e.message, log: [] });
+  }
+});
+for (const button of document.querySelectorAll("button.step")) {
+  button.addEventListener("click", () => startRun(button.dataset.task));
+}
+$("btn-run").addEventListener("click", () => startRun("berekening"));
+$("btn-schem").addEventListener("click", () => startRun("schematisatie"));
+$("show-schem").addEventListener("change", drawChart);
 $("btn-prev").addEventListener("click", () => step(-1));
 $("btn-next").addEventListener("click", () => step(1));
 $("show-others").addEventListener("change", drawChart);

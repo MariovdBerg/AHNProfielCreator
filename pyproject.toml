@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-schem = ["rdp"]  # alleen voor profielen.SchemProfile
+# Schematiseren tot .prfl (ProfielCheckPython, niet op PyPI)
+schem = ["prflcheck @ https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip"]
 test = ["pytest"]
 
 [project.scripts]
@@ -29,7 +30,7 @@ ahn-profielen-app = "ahnprofielcreator.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"ahnprofielcreator" = ["data/*.gpkg"]
+"ahnprofielcreator" = ["data/*.gpkg", "data/demo/*"]
 "ahnprofielcreator.app" = ["static/*", "static/vendor/leaflet/*", "static/vendor/leaflet/images/*"]
 
 [tool.pytest.ini_options]

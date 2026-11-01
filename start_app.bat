@@ -37,7 +37,7 @@ if defined CONFIG (
     echo Instellingen: %CONFIG%
     python app.py --config "%CONFIG%"
 ) else (
-    echo Geen config.ini gevonden; vul de instellingen in de app in.
+    echo Geen config.ini gevonden; de app start met het demotraject.
     python app.py
 )
 if errorlevel 1 pause

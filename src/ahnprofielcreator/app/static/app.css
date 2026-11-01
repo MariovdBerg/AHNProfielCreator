@@ -125,6 +125,7 @@ button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accen
 .status.running { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .status.done { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .status.error { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+#demo-note { margin: 0 0 10px; }
 
 #run-log {
   max-height: 180px;
@@ -193,6 +194,15 @@ main {
 #chart .other { fill: none; stroke: var(--g-axis); stroke-opacity: .45; stroke-width: 1; }
 #chart .selected { fill: none; stroke-width: 2.5; }
 #chart .cursor { stroke: var(--text); stroke-opacity: .4; }
+/* Schematisatie: representatief profiel (kwantiel) en het Hydra-NL profiel (.prfl) */
+#chart .schem-repr { fill: none; stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 6 4; stroke-opacity: .7; }
+#chart .schem-hydra { fill: none; stroke: var(--brand); stroke-width: 3; }
+#chart .schem-point { fill: var(--g-bg); stroke: var(--brand); stroke-width: 2; }
+#chart .schem-crest { fill: var(--brand); }
+#chart .schem-voorland { fill: none; stroke: var(--ok); stroke-width: 2.5; }
+#chart .schem-voorland-point { fill: var(--g-bg); stroke: var(--ok); stroke-width: 2; }
+#chart .legend text { fill: var(--g-text); font-size: 11px; }
+#chart .legend .bad { fill: var(--bad); }
 
 #chart-tip {
   position: absolute;

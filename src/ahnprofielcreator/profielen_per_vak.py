@@ -22,13 +22,14 @@ import argparse
 import configparser
 import dataclasses
 import logging
+import math
 import os
 import sys
 from typing import Optional
 
 import fiona
 
-from . import ahn, buitenlijn
+from . import ahn, buitenlijn, schematisatie
 from .profielen import CrossSectionHeights, CrossSections
 
 
@@ -55,16 +56,57 @@ class Settings:
     model_resolutie: float = 0.5  # [m] resolutie van het AHN-model: 0.5 of 5
     # Instellingen
     interval_length: float = 10  # [m] per meter langs normtraject
-    cross_length: float = 100.0  # [m] lengte dwarsdoorsnede (helft naar beide kanten)
+    # [m] lengte dwarsdoorsnede (helft naar beide kanten); 100 m buiten past bij HR-locaties op ~100 m van de kruin
+    cross_length: float = 200.0
     ahn_stepsize: float = 0.5  # [m] stapgrootte voor AHN hoogte
+    # Schematisatie tot een Hydra-NL profiel (.prfl) per vak (optionele stap na de berekening)
+    schem_kwantiel: float = 0.2  # [-] kwantiel van de hoogtes van de profielen in een vak
+    schem_kruin_zoekafstand: float = 10.0  # [m] zoek de kruin binnen deze afstand van de dijklijn
+    schem_ruwheid: float = 1.0  # [-] ruwheid van het talud (grenzen uit prflcheck: 0.5 - 1.0)
+    schem_voorland: str = "ja"  # Voorland (buiten de teen) in het .prfl: ja of nee
+    schem_min_bermbreedte: float = 3.0  # [m] een berm is minstens zo breed
+    schem_min_taludhoogte: float = 0.5  # [m] de taluds naast een berm zijn minstens zo hoog
+    # Een berm telt alleen mee als de afwijking (RMSE) van het profiel er zowel relatief als absoluut zoveel door daalt
+    schem_berm_winst_rel: float = 0.2  # [-] fractie, 0.2 = 20%
+    schem_berm_winst_abs: float = 0.03  # [m]
+    # Overige instellingen van de fit
+    schem_min_taludbreedte: float = 2.0  # [m] een talud is minstens zo breed
+    schem_stap: float = 0.5  # [m] raster van de knikpunten en van het representatieve profiel
+    # [m] in de fit telt alleen het voorland tot zover (plus de dijkbreedte) buiten de eerst gevonden teen
+    schem_voorland_fit: float = 30.0
+    schem_voorland_delen: int = 1  # Delen voorland in de fit (alleen om de teen te vinden)
+    schem_decimalen: int = 3  # Afronding van x en z in het .prfl
 
     def __post_init__(self):
         """Controleer de instellingen, zodat fouten meteen met een duidelijke melding opvallen."""
-        for name in ("interval_length", "cross_length", "ahn_stepsize"):
+        positief = ("interval_length", "cross_length", "ahn_stepsize", "schem_kruin_zoekafstand",
+                    "schem_min_taludbreedte", "schem_stap")
+        for name in positief:
             value = float(getattr(self, name))
             if not value > 0:  # Ook NaN afkeuren
                 raise ValueError(f"'{name}' moet groter dan 0 zijn (is {value:g})")
             setattr(self, name, value)
+        for name, low, high in (
+            ("schem_kwantiel", 0.0, 1.0),
+            ("schem_ruwheid", *ruwheid_grenzen()),
+            ("schem_min_bermbreedte", 0.0, math.inf),
+            ("schem_min_taludhoogte", 0.0, math.inf),
+            ("schem_berm_winst_rel", 0.0, 1.0),
+            ("schem_berm_winst_abs", 0.0, math.inf),
+            ("schem_voorland_fit", 0.0, math.inf),
+        ):
+            value = float(getattr(self, name))
+            if not low <= value <= high:
+                raise ValueError(f"'{name}' moet tussen {low:g} en {high:g} liggen (is {value:g})")
+            setattr(self, name, value)
+        for name, low, high in (("schem_voorland_delen", 1, 3), ("schem_decimalen", 1, 6)):
+            value = float(getattr(self, name))
+            if not (value == int(value) and low <= value <= high):
+                raise ValueError(f"'{name}' moet een geheel getal van {low} tot en met {high} zijn (is {value:g})")
+            setattr(self, name, int(value))
+        self.schem_voorland = str(self.schem_voorland).strip().lower()
+        if self.schem_voorland not in ("ja", "nee"):
+            raise ValueError(f"'schem_voorland' moet ja of nee zijn (is '{self.schem_voorland}')")
         self.outside_offset = float(self.outside_offset or 0.0)
         if not self.outside_offset >= 0:
             raise ValueError(f"'outside_offset' mag niet negatief zijn (is {self.outside_offset:g})")
@@ -91,16 +133,39 @@ class Settings:
         return os.path.join(self.output_dir, OUTPUT_CROSS_AHN)
 
     @property
+    def output_prfl_dir(self):
+        return os.path.join(self.output_dir, OUTPUT_PRFL_DIR)
+
+    @property
+    def output_schem(self):
+        return os.path.join(self.output_prfl_dir, OUTPUT_SCHEM)
+
+    @property
     def outside_line(self):
         return outside_line(
             self.cur_dir, self.interval_length, self.input_line_outside, self.outside_offset
         )
 
 
+def ruwheid_grenzen():
+    """
+    Grenzen voor de ruwheid van een dijkdeel uit de controle van prflcheck (RUWHEIDLAAG, RUWHEIDHOOG).
+
+    prflcheck is alleen nodig voor het schematiseren; zonder dat pakket alleen 'groter dan 0'.
+    """
+    try:
+        import prflcheck.checks as checks
+    except ImportError:
+        return 1e-12, math.inf
+    return checks.RUWHEIDLAAG, checks.RUWHEIDHOOG
+
+
 OUTPUT_POINTS = "cross_points.shp"
 OUTPUT_CROSS = "cross_lines.shp"
 OUTPUT_CROSS_AHN = "cross_lines_ahn.shp"
 OUTPUT_OUTSIDE = "buitenlijn_offset.shp"
+OUTPUT_PRFL_DIR = "prfl"  # Geschematiseerde profielen, één .prfl per vak
+OUTPUT_SCHEM = "schematisatie.json"  # Overzicht van de schematisatie (in OUTPUT_PRFL_DIR, met een .csv ernaast)
 
 # Vervallen instellingen: de bestandsnamen komen nu uit de downloadlinks in de kaartbladindex.
 REMOVED_SETTINGS = ("ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform")
@@ -195,12 +260,9 @@ def get_logger():
     return logger
 
 
-def run(settings):
-    """Voer alle stappen uit het notebook uit en geef de AHN-dwarslijnen per groep terug."""
-    logger = get_logger()
-
-    # Eerst de kaartbladindex lezen, zodat fouten in de AHN-instellingen meteen opvallen.
-    tiles = ahn.AHNTiles(
+def ahn_tiles(settings, logger=None):
+    """Kaartbladindex en lokale AHN-bladen volgens de instellingen."""
+    return ahn.AHNTiles(
         settings.ahn_file_loc,
         download_folder=settings.ahn_file_downloaded,
         index=settings.ahn_index,
@@ -208,13 +270,32 @@ def run(settings):
         version=settings.ahn_versie,
         model=settings.model,
         resolution=settings.model_resolutie,
-        logger=logger,
+        logger=logger or get_logger(),
     )
-    check_input_crs(settings)
-    os.makedirs(settings.output_dir, exist_ok=True)
-    make_outside_line(settings, logger)
 
-    # Initialize class voor intervalpunten en bijbehorende dwarslijnen.
+
+def require_file(path, step):
+    """Een stap leest de uitvoer van de vorige stap; meld duidelijk als die er nog niet is."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"'{path}' bestaat nog niet; {step}.")
+
+
+def make_points(settings, logger=None):
+    """Stap 1: intervalpunten langs de dijkvakken."""
+    logger = logger or get_logger()
+    check_crs(settings.input_line, "Dijkvakken")
+    os.makedirs(settings.output_dir, exist_ok=True)
+    cs = CrossSections(settings.input_line, settings.output_points, group_id=settings.group_id, logger=logger)
+    logger.info(f"Stap 1/3: intervalpunten om de {settings.interval_length:g} m...")
+    cs.interval_points_to_file(interval=settings.interval_length)
+
+
+def make_cross_lines(settings, logger=None):
+    """Stap 2: dwarslijnen door de intervalpunten, georiënteerd met de (eventueel afgeleide) buitenlijn."""
+    logger = logger or get_logger()
+    require_file(settings.output_points, "genereer eerst de intervalpunten")
+    check_input_crs(settings)
+    make_outside_line(settings, logger)
     cs = CrossSections(
         settings.input_line,
         settings.output_points,
@@ -222,16 +303,15 @@ def run(settings):
         outside_line_file=settings.outside_line,
         logger=logger,
     )
-
-    # Maak interval punten.
-    logger.info(f"Stap 1/3: intervalpunten om de {settings.interval_length:g} m...")
-    cs.interval_points_to_file(interval=settings.interval_length)
-
-    # Maak dwarslijnen.
     logger.info(f"Stap 2/3: dwarslijnen van {settings.cross_length:g} m...")
     cs.crosssections_to_file(settings.output_cross, length_crosssection=settings.cross_length)
 
-    # Initialize class.
+
+def make_profiles(settings, logger=None, tiles=None):
+    """Stap 3: AHN-hoogtes langs de dwarslijnen; geeft de AHN-dwarslijnen per groep terug."""
+    logger = logger or get_logger()
+    tiles = tiles or ahn_tiles(settings, logger)
+    require_file(settings.output_cross, "genereer eerst de dwarslijnen")
     ch = CrossSectionHeights(
         settings.output_cross,
         group_id=settings.group_id,
@@ -239,12 +319,30 @@ def run(settings):
         ahn_stepsize=settings.ahn_stepsize,
         logger=logger,
     )
-
-    # AHN hoogtes voor dwarslijnen.
     logger.info(f"Stap 3/3: AHN{tiles.version} {tiles.product} hoogtes om de {settings.ahn_stepsize:g} m...")
-    heights = ch.crosssections_height_to_file(settings.output_cross_ahn, "ahn")
+    return ch.crosssections_height_to_file(settings.output_cross_ahn)
+
+
+def run(settings):
+    """Voer alle stappen uit het notebook uit en geef de AHN-dwarslijnen per groep terug."""
+    logger = get_logger()
+
+    # Eerst de kaartbladindex lezen en de invoer controleren, zodat fouten meteen opvallen.
+    tiles = ahn_tiles(settings, logger)
+    check_input_crs(settings)
+
+    make_points(settings, logger)
+    make_cross_lines(settings, logger)
+    heights = make_profiles(settings, logger, tiles=tiles)
     logger.info(f"Klaar, output in '{settings.output_dir}'.")
     return heights
+
+
+def schematise(settings):
+    """Optionele stap na `run`: schematiseer de AHN-profielen per vak tot een Hydra-NL profiel (.prfl)."""
+    logger = get_logger()
+    logger.info(f"Schematiseren: één Hydra-NL profiel (.prfl) per vak, kwantiel {settings.schem_kwantiel:g}...")
+    return schematisatie.schematise(settings, logger)
 
 
 CONFIG_SECTION = "profielen"
@@ -285,6 +383,31 @@ def load_config(path):
     return config
 
 
+def write_config(path, config):
+    """
+    Schrijf instellingen naar sectie [profielen] van een INI-bestand, leesbaar met `load_config`.
+
+    Alleen de opgegeven waarden, in de volgorde van `Settings`; de rest blijft de standaardwaarde.
+    """
+    lines = [
+        "; Instellingen voor ahn-profielen en de webapp (opgeslagen vanuit de webapp).",
+        "; Gebruik: ahn-profielen --config <dit bestand>. Ontbrekende waarden: standaardwaarde.",
+        "",
+        f"[{CONFIG_SECTION}]",
+    ]
+    for field in dataclasses.fields(Settings):
+        value = config.get(field.name)
+        if value is None or value == "":
+            continue
+        value = str(value)
+        # Dit zou `load_config` als (begin van) commentaar of als volgende regel lezen.
+        if "\n" in value or "\r" in value or any(c in value for c in (" ;", " #", "\t;", "\t#")):
+            raise ValueError(f"'{field.name}' bevat een regeleinde of ' ;'/' #' en kan niet in een INI-bestand")
+        lines.append(f"{field.name} = {value}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="ahn-profielen",
@@ -315,8 +438,36 @@ def parse_args(argv=None):
     parser.add_argument("--model", help="DTM of DSM (standaard: DTM)")
     parser.add_argument("--model-resolutie", type=float, help="[m] resolutie AHN-model, 0.5 of 5 (standaard: 0.5)")
     parser.add_argument("--interval-length", type=float, help="[m] afstand tussen profielen (standaard: 10)")
-    parser.add_argument("--cross-length", type=float, help="[m] lengte dwarsdoorsnede (standaard: 100)")
+    parser.add_argument("--cross-length", type=float, help="[m] lengte dwarsdoorsnede (standaard: 200)")
     parser.add_argument("--ahn-stepsize", type=float, help="[m] stapgrootte voor AHN hoogte (standaard: 0.5)")
+    parser.add_argument(
+        "--schematiseren",
+        action="store_true",
+        help="schematiseer daarna de profielen per vak tot een Hydra-NL profiel (.prfl); nodig: prflcheck",
+    )
+    parser.add_argument("--schem-kwantiel", type=float, help="kwantiel van de hoogtes per vak (standaard: 0.2)")
+    parser.add_argument(
+        "--schem-kruin-zoekafstand", type=float, help="[m] zoek de kruin binnen deze afstand van de dijklijn (standaard: 10)"
+    )
+    parser.add_argument("--schem-ruwheid", type=float, help="ruwheid van het talud, 0.5 - 1.0 (standaard: 1.0)")
+    parser.add_argument("--schem-voorland", choices=("ja", "nee"), help="voorland in het .prfl (standaard: ja)")
+    parser.add_argument("--schem-min-bermbreedte", type=float, help="[m] minimale breedte van een berm (standaard: 3)")
+    parser.add_argument(
+        "--schem-min-taludhoogte", type=float, help="[m] minimale hoogte van de taluds naast een berm (standaard: 0.5)"
+    )
+    parser.add_argument(
+        "--schem-berm-winst-rel", type=float, help="berm telt mee als de RMSE minstens deze fractie daalt (standaard: 0.2)"
+    )
+    parser.add_argument(
+        "--schem-berm-winst-abs", type=float, help="[m] en ook minstens zoveel daalt (standaard: 0.03)"
+    )
+    parser.add_argument("--schem-min-taludbreedte", type=float, help="[m] minimale breedte van een talud (standaard: 2)")
+    parser.add_argument("--schem-stap", type=float, help="[m] raster van de schematisatie (standaard: 0.5)")
+    parser.add_argument(
+        "--schem-voorland-fit", type=float, help="[m] voorland in de fit tot zover buiten de teen (standaard: 30)"
+    )
+    parser.add_argument("--schem-voorland-delen", type=int, help="delen voorland in de fit, 1-3 (standaard: 1)")
+    parser.add_argument("--schem-decimalen", type=int, help="decimalen van x en z in het .prfl, 1-6 (standaard: 3)")
     return parser, parser.parse_args(argv)
 
 
@@ -327,7 +478,7 @@ def main(argv=None):
         config = load_config(args.config) if args.config else {}
     except (OSError, ValueError, configparser.Error) as e:
         parser.error(str(e))
-    overrides = {k: v for k, v in vars(args).items() if k != "config" and v is not None}
+    overrides = {k: v for k, v in vars(args).items() if k not in ("config", "schematiseren") and v is not None}
     config.update(overrides)
 
     required = [f.name for f in dataclasses.fields(Settings) if f.default is dataclasses.MISSING]
@@ -339,7 +490,11 @@ def main(argv=None):
         settings = Settings(**config)
     except ValueError as e:
         parser.error(str(e))
+    if args.schematiseren:
+        schematisatie.import_prflcheck()  # Meteen melden als prflcheck ontbreekt, niet pas na de berekening
     run(settings)
+    if args.schematiseren:
+        schematise(settings)
     return 0
 
 

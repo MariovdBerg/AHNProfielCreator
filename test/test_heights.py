@@ -1,5 +1,7 @@
 """AHN-hoogtes langs dwarslijnen (profielen.CrossSectionHeights) met een kleine nep-GeoTIFF."""
 
+import logging
+
 import pytest
 import rasterio
 import shapely.geometry
@@ -14,7 +16,7 @@ def heights_for(tmp_path, tif, line, stepsize=1.0):
         tmp_path / "cross.shp", [(line, {"vak_id": "A", "CROSS_ID": 1})], {"vak_id": "str", "CROSS_ID": "int"}
     )
     ch = CrossSectionHeights(cross, group_id="vak_id", ahn_tiles=FakeTiles(tif, (0, 0, 100, 100)), ahn_stepsize=stepsize)
-    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"), "ahn")
+    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"))
     return read_rows(tmp_path / "ahn.shp")[0][0]
 
 
@@ -47,3 +49,28 @@ def test_raster_window_is_small(tif):
         heights, window = ch.read_raster_window(dataset, [shapely.geometry.LineString([(10, 10), (20, 12)])])
     assert heights.shape == (5, 13)
     assert (window.col_off, window.row_off) == (9, 87)
+
+
+def warnings_for(tmp_path, tif, logs, line):
+    cross = write_lines(
+        tmp_path / "cross.shp", [(line, {"vak_id": "A", "CROSS_ID": 1})], {"vak_id": "str", "CROSS_ID": "int"}
+    )
+    ch = CrossSectionHeights(
+        cross, group_id="vak_id", ahn_tiles=FakeTiles(tif, (0, 0, 100, 100)), ahn_stepsize=1.0,
+        logger=logging.getLogger("ahnprofielcreator"),
+    )
+    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"))
+    return [m for m in logs() if "geen hoogte" in m]
+
+
+def test_warning_for_sheet_without_heights(tmp_path, tif, logs):
+    # Helemaal in het gat van de dekking (x = 60..70): 'blad' zonder hoogtes.
+    messages = warnings_for(tmp_path, tif, logs, shapely.geometry.LineString([(61, 50), (69, 50)]))
+    assert len(messages) == 1
+    assert "Blad blad: 100%" in messages[0]
+
+
+def test_no_warning_for_partly_missing_heights(tmp_path, tif, logs):
+    # 10 van de 60 punten binnen het raster in het gat; de 21 punten buiten het raster tellen niet mee.
+    line = shapely.geometry.LineString([(40.5, 50), (120.5, 50)])
+    assert warnings_for(tmp_path, tif, logs, line) == []
