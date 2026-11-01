@@ -149,7 +149,7 @@ uitvoer en de instellingen:
   git-projectmap waarin ontwikkeld wordt.
 - **Invoer:** relatieve paden in de instellingen gelden ten opzichte van `invoer`, bijv.
   `input_line = dijkvakken.shp` of `ahn_file_loc = .` (de tiffs staan in `invoer` zelf). Absolute paden
-  (bijv. `P:\OpenData\AHN\AHN5\DTM05`) werken ook.
+  (bijv. `D:\AHN\AHN5\DTM05`) werken ook.
 - **Uitvoer:** alles komt in `uitvoer`. Een nieuwe berekening overschrijft de vorige, ook met een ander interval.
 
 ## Invoer
@@ -206,8 +206,8 @@ punten in rood.
 
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app zelf.
 
-1. **Map met AHN-tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs. Binnen HKV bijv.
-   `P:\OpenData\AHN\AHN5\DTM05`.
+1. **Map met AHN-tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs, bijv.
+   `D:\AHN\AHN5\DTM05`.
 2. **Map voor downloads** (`ahn_file_downloaded`, optioneel): hier komen gedownloade bladen en hier wordt ook
    gezocht. Leeg = `ahn_data` in de werkmap, zodat alle projecten dezelfde downloads gebruiken.
 3. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`):
@@ -244,7 +244,7 @@ De app valt dan niet terug op AHN4; kies zo nodig zelf `ahn_versie = 4`.
 **Let op:**
 - Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
 - AHN6 gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg` (ook
-  meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in de log;
+  meegeleverd, de AHN6-bladindeling van [AHN](https://www.ahn.nl)) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in de log;
   voor de berekening gebruikt de app AHN6 (nog) niet.
 
 Licentie: AHN1 t/m AHN4 vallen onder CC0, AHN5 en later onder CC BY 4.0 (bronvermelding: AHN).
@@ -365,7 +365,7 @@ settings = Settings(
     input_line_outside="buitenlijn.shp",  # of: None en outside_offset=20 om de buitenlijn af te leiden
     outside_side="links",
     group_id="vak_id",
-    ahn_file_loc=r"P:\OpenData\AHN\AHN5\DTM05",  # lokale tiffs
+    ahn_file_loc=r"D:\AHN\AHN5\DTM05",  # lokale tiffs
     ahn_file_downloaded=None,  # map voor downloads; None = <werkmap>\ahn_data
     ahn_versie=5,  # standaard; terugval op AHN4
     model="DTM",

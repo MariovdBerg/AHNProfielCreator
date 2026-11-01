@@ -40,13 +40,13 @@ de andere gevallen hebben de AHN5-tiffs (DTM 0,5 m) nodig en draaien alleen op v
 pytest -m ahn
 ```
 
-De tiffs worden standaard gezocht in `P:\OpenData\AHN\AHN5\DTM05`; een andere map geef je op met de
-omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
+De tiffs worden standaard gezocht in `ahn_data` in de ontwikkelmap (daar zet de app ook downloads neer); een
+andere map geef je op met de omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
 
 ## Referentie opnieuw maken
 
-Verandert de uitvoer bewust, maak de referentie dan opnieuw (met `AHN_TEST_DIR` als de tiffs niet op P:
-staan):
+Verandert de uitvoer bewust, maak de referentie dan opnieuw (met `AHN_TEST_DIR` als de tiffs niet in
+`ahn_data` staan):
 
 ```bash
 python test/referentie.py

@@ -111,7 +111,7 @@ def test_steps_separately(tmp_path, dijk_noord, fake_tiles):
 
 
 def test_write_config_roundtrip(tmp_path):
-    config = {"input_line": r"P:\data dijk\vakken.shp", "ahn_file_loc": "ahn", "interval_length": 25.0}
+    config = {"input_line": r"D:\data dijk\vakken.shp", "ahn_file_loc": "ahn", "interval_length": 25.0}
     path = tmp_path / "project" / "config.ini"
     path.parent.mkdir()
     ppv.write_config(path, {**config, "projectmap": "elders"})

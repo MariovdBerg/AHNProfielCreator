@@ -3,8 +3,8 @@ Testgevallen voor de regressietest (test_reference.py) en het opnieuw maken van 
 
 De gevallen zijn het demotraject en de stukken normtraject in ``test/test_input/<geval>`` (zie de README daar).
 Per geval staat de referentie in ``test/test_output/<geval>``. De AHN-hoogtes van het demotraject komen uit
-de meegeleverde strook; die van de andere gevallen uit de AHN5-tiffs in ``AHN_TEST_DIR`` (standaard de
-HKV-map op P:). Er wordt nooit gedownload en er is geen terugval op AHN4.
+de meegeleverde strook; die van de andere gevallen uit de AHN5-tiffs in ``AHN_TEST_DIR`` (standaard
+``ahn_data`` in de ontwikkelmap, de downloadmap van de app). Er wordt nooit gedownload en er is geen terugval op AHN4.
 
 Referentie opnieuw maken (na een bedoelde wijziging), in de geactiveerde omgeving vanuit de ontwikkelmap::
 
@@ -30,7 +30,7 @@ from ahnprofielcreator.profielen import CrossSectionHeights, CrossSections  # no
 
 INPUT = ROOT / "test_input"
 OUTPUT = ROOT / "test_output"
-AHN_DIR = os.environ.get("AHN_TEST_DIR", r"P:\OpenData\AHN\AHN5\DTM05")
+AHN_DIR = os.environ.get("AHN_TEST_DIR", str(ROOT.parent / "ahn_data"))
 
 GROUP_ID = "vak_id"
 AHN_STEPSIZE = 0.5

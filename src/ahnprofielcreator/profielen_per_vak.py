@@ -436,7 +436,7 @@ CONFIG_LAYOUT = (
     (
         "AHN",
         {
-            "ahn_file_loc": "Map met lokale AHN-tiffs (binnen HKV bijv. P:\\OpenData\\AHN\\AHN5\\DTM05); . = de map invoer",
+            "ahn_file_loc": "Map met lokale AHN-tiffs (bijv. D:\\AHN\\AHN5\\DTM05); . = de map invoer",
             "ahn_file_downloaded": "Map voor gedownloade kaartbladen (~200 MB per blad bij 0,5 m), ook hier wordt gezocht; "
             f"..\\..\\{DOWNLOAD_DIR} = {DOWNLOAD_DIR} in de werkmap, gedeeld door alle projecten",
             "ahn_index": "Kaartbladen met downloadlinks (.gpkg/.shp); leeg = de meegeleverde bladwijzer.gpkg",

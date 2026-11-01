@@ -3,7 +3,7 @@ Regressietest: de volledige keten per testgeval (zie referentie.py) moet de refe
 
 Stap 1 en 2 (buitenlijn, punten en dwarslijnen) draaien altijd, net als stap 3 (AHN-hoogtes) voor het demotraject:
 daarvan komt de AHN-strook mee met het pakket. Stap 3 voor de andere gevallen heeft de AHN5-tiffs nodig en
-draait alleen met ``pytest -m ahn``; de map met tiffs komt uit ``AHN_TEST_DIR`` (standaard de HKV-map op P:).
+draait alleen met ``pytest -m ahn``; de map met tiffs komt uit ``AHN_TEST_DIR`` (standaard ``ahn_data`` in de ontwikkelmap).
 Er wordt nooit gedownload: ontbreekt een blad, dan wordt de test overgeslagen.
 
 Referentie opnieuw maken (na een bedoelde wijziging): ``python test/referentie.py``.

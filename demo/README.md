@@ -6,7 +6,7 @@ ook `ahnprofielcreator.demo`.
 
 Het is een ondoorbroken stuk van 3 km uit normtraject 44-1 (Lekdijk, noordoever van de Lek, gemeente Houten),
 van 19 750 tot 22 750 m langs het traject. Bron: `nbpw_dijktrajecten_formeel.shp` (normtrajecten primaire
-waterkeringen).
+waterkeringen) uit de [Nationale Basisbestanden Primaire Waterkeringen](https://data.overheid.nl/dataset/48540-dataset-nationale-basisbestanden-primaire-waterkeringen) van Rijkswaterstaat ([Waterveiligheidsportaal](https://waterveiligheidsportaal.nl)), publiek domein.
 
 In `invoer`:
 
