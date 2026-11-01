@@ -5,9 +5,10 @@ Lokale webapp om de invoer en uitvoer van de profielen te bekijken.
 Gebruikt alleen de standaardbibliotheek en de pakketten die het project al nodig heeft (fiona, rasterio).
 Leaflet staat in ``static/vendor``; alleen de achtergrondkaarten komen van internet (PDOK).
 
-Starten::
+De app werkt in een werkmap met projecten: elk project is een map met ``invoer``, ``uitvoer`` en de
+instellingen in ``config.ini``. Starten::
 
-    python app.py --config config.ini
+    python app.py --werkmap <werkmap> --project <naam>
 """
 
 import argparse
@@ -19,6 +20,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 import traceback
 import urllib.parse
@@ -29,7 +31,7 @@ import fiona
 from rasterio.warp import transform
 
 from .. import profielen_per_vak as ppv
-from ..demo import DEMO_NAME, demo_config
+from ..demo import DEMO_DIR, DEMO_NAME, is_demo
 from ..profielen.constants import DEFAULT_CROSS_ID, DEFAULT_POINT_ID, NODATA
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -43,6 +45,8 @@ CONTENT_TYPES = {
     ".svg": "image/svg+xml",
 }
 FIELDS = {f.name: f for f in dataclasses.fields(ppv.Settings)}
+# Het project bepaalt de projectmap; die staat niet in het formulier of in config.ini.
+PROJECT_FIELD = "projectmap"
 
 
 def _default(name):
@@ -74,6 +78,19 @@ def validate_settings(settings):
     """Controleer de waarden (zie `Settings`); ontbrekende verplichte paden mogen nog, die komen bij de berekening."""
     required = {name: "" for name, f in FIELDS.items() if f.default is dataclasses.MISSING}
     ppv.Settings(**{**required, **settings})
+
+
+def is_project(path):
+    """Een project is een map met een map invoer of een config.ini."""
+    return os.path.isdir(os.path.join(path, ppv.INPUT_DIR)) or os.path.isfile(os.path.join(path, ppv.CONFIG_FILE))
+
+
+def check_project_name(name):
+    """Een projectnaam is een mapnaam in de werkmap, zonder pad."""
+    name = str(name or "").strip()
+    if not name or name in (".", "..") or re.search(r'[\\/:*?"<>|]', name):
+        raise ValueError(f"Ongeldige projectnaam '{name}': gebruik een mapnaam zonder \\ / : * ? \" < > |.")
+    return name
 
 
 def to_wgs84(crs, coordinates):
@@ -120,36 +137,96 @@ class ListHandler(logging.Handler):
 
 
 class State:
-    def __init__(self, config, demo=False, config_path=None):
+    def __init__(self, werkmap, project=None, settings=None):
+        """
+        Toestand van de app in `werkmap`, met `project` (naam of pad) geopend.
+
+        De instellingen komen uit ``config.ini`` in het project, of uit `settings` als die opgegeven zijn.
+        """
         self.lock = threading.Lock()
-        self.settings = clean_settings(config)
-        self.config_path = config_path  # INI-bestand van de instellingen (voorstel bij opslaan)
-        # Instellingen van het demotraject, zolang de gebruiker die niet aanpast (voor de melding in de app).
-        self.demo_settings = dict(self.settings) if demo else None
+        self.werkmap = os.path.abspath(werkmap)
+        self.projectmap = None
+        self.settings = {}
         self.cache = {}
         self.run = {"state": "idle", "task": None, "log": collections.deque(maxlen=500), "message": ""}
+        if project:
+            self.open_project(project, settings)
+
+    # ---------- Projecten ----------
+
+    @property
+    def config_path(self):
+        """INI-bestand met de instellingen van het project."""
+        return os.path.join(self.projectmap, ppv.CONFIG_FILE) if self.projectmap else None
+
+    def projects(self):
+        """Namen van de projecten in de werkmap."""
+        if not os.path.isdir(self.werkmap):
+            return []
+        names = [e.name for e in os.scandir(self.werkmap) if e.is_dir() and is_project(e.path)]
+        return sorted(names, key=str.lower)
+
+    def open_project(self, project, settings=None):
+        """Open een project: een naam in de werkmap of een pad naar een projectmap."""
+        path = os.path.abspath(os.path.join(self.werkmap, project))
+        if not os.path.isdir(path):
+            raise FileNotFoundError(f"Project '{project}' bestaat niet in '{self.werkmap}'.")
+        if settings is None:
+            config = os.path.join(path, ppv.CONFIG_FILE)
+            settings = ppv.load_config(config) if os.path.isfile(config) else {}
+        settings = clean_settings(settings)
+        settings.pop(PROJECT_FIELD, None)
+        with self.lock:
+            if self.run["state"] == "running":
+                raise RuntimeError("Er loopt een berekening; wacht tot die klaar is.")
+            self.projectmap = path
+            self.settings = settings
+            self.run.update(state="idle", task=None, message="")
+            self.run["log"].clear()
+            self.cache.clear()
+
+    def new_project(self, name):
+        """Maak een project (met de mappen invoer en uitvoer) in de werkmap en open het."""
+        name = check_project_name(name)
+        if self.run["state"] == "running":
+            raise RuntimeError("Er loopt een berekening; wacht tot die klaar is.")
+        path = os.path.join(self.werkmap, name)
+        if os.path.exists(path):
+            raise FileExistsError(f"'{path}' bestaat al.")
+        for sub in (ppv.INPUT_DIR, ppv.OUTPUT_DIR):
+            os.makedirs(os.path.join(path, sub))
+        # Meteen een volledige config.ini: alle instellingen met hun standaardwaarde.
+        ppv.write_config(os.path.join(path, ppv.CONFIG_FILE), {})
+        self.open_project(name)
+
+    def require_project(self):
+        if not self.projectmap:
+            raise ValueError("Kies of maak eerst een project.")
 
     # ---------- Instellingen en paden ----------
 
     def value(self, name):
+        if name == PROJECT_FIELD:
+            return self.projectmap
         return self.settings.get(name, _default(name))
 
+    def full_settings(self, settings=None):
+        """Instellingen voor `Settings`: die van het formulier plus de projectmap."""
+        return {**(self.settings if settings is None else settings), PROJECT_FIELD: self.projectmap or ""}
+
     def paths(self):
+        project = self.projectmap
+        vakken = self.value("input_line")
         paths = {
-            "vakken": self.value("input_line"),
-            "buitenlijn": ppv.outside_line(
-                self.value("cur_dir"),
-                self.value("interval_length"),
-                self.value("input_line_outside"),
-                self.value("outside_offset"),
-            ),
+            "vakken": ppv.input_path(project, vakken) if project else vakken,
+            "buitenlijn": ppv.outside_line(project, self.value("input_line_outside"), self.value("outside_offset")),
             "punten": None,
             "dwarslijnen": None,
             "profielen": None,
             "schematisatie": None,
         }
-        if self.value("cur_dir"):
-            out = ppv.output_dir(self.value("cur_dir"), self.value("interval_length"))
+        if project:
+            out = ppv.output_dir(project)
             paths["punten"] = os.path.join(out, ppv.OUTPUT_POINTS)
             paths["dwarslijnen"] = os.path.join(out, ppv.OUTPUT_CROSS)
             paths["profielen"] = os.path.join(out, ppv.OUTPUT_CROSS_AHN)
@@ -166,6 +243,8 @@ class State:
     def settings_info(self):
         fields = []
         for name, field in FIELDS.items():
+            if name == PROJECT_FIELD:
+                continue
             fields.append(
                 {
                     "name": name,
@@ -177,26 +256,28 @@ class State:
             )
         paths = self.paths()
         files = {k: {"path": p, "exists": bool(p) and os.path.isfile(p)} for k, p in paths.items()}
-        demo = DEMO_NAME if self.demo_settings is not None and self.settings == self.demo_settings else None
+        project = self.projectmap
         return {
             "fields": fields,
             "files": files,
-            "demo": demo,
+            "werkmap": self.werkmap,
+            "projects": self.projects(),
+            "project": os.path.basename(project) if project else None,
+            "projectmap": project,
+            "input_dir": ppv.input_dir(project) if project else None,
+            "output_dir": ppv.output_dir(project) if project else None,
+            "demo": DEMO_NAME if is_demo(project) else None,
             "schem_stale": self.schem_stale(),
             "config_path": self.config_path,
         }
 
-    def save_config(self, path, overwrite=False):
-        """Sla de instellingen op in een INI-bestand; een bestaand bestand alleen met `overwrite`."""
-        if not path.lower().endswith(".ini"):
-            raise ValueError("Geef een pad naar een .ini-bestand op.")
-        path = os.path.abspath(path)
-        if not os.path.isdir(os.path.dirname(path)):
-            raise FileNotFoundError(f"Map '{os.path.dirname(path)}' bestaat niet.")
-        if os.path.exists(path) and not overwrite:
-            raise FileExistsError(f"'{path}' bestaat al.")
+    def save_config(self):
+        """Sla de instellingen op in config.ini van het project: alle instellingen, ook de standaardwaarden."""
+        self.require_project()
+        path = self.config_path
         ppv.write_config(path, self.settings)
-        self.config_path = path
+        # Opnieuw inlezen, zodat het formulier ook de geschreven standaardwaarden toont.
+        self.settings = clean_settings(ppv.load_config(path))
         return {"path": path}
 
     # ---------- Shapefiles lezen ----------
@@ -353,7 +434,10 @@ class State:
         with self.lock:
             if self.run["state"] == "running":
                 raise RuntimeError("Er loopt al een berekening.")
-            settings = {"ahn_file_loc": "", **self.settings} if task in self.NO_AHN else self.settings
+            self.require_project()
+            settings = self.full_settings()
+            if task in self.NO_AHN:
+                settings = {"ahn_file_loc": "", **settings}
             missing = [n for n, f in FIELDS.items() if f.default is dataclasses.MISSING and n not in settings]
             if missing:
                 raise ValueError(f"Ontbrekende instelling(en): {', '.join(missing)}")
@@ -470,8 +554,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return body
 
         def update_settings():
+            self.state.require_project()
             settings = clean_settings(parse_body())
-            validate_settings(settings)
+            settings.pop(PROJECT_FIELD, None)
+            validate_settings(self.state.full_settings(settings))
             with self.state.lock:
                 # Niet tijdens een berekening: die leest o.a. de afgeleide buitenlijn.
                 if self.state.run["state"] == "running":
@@ -480,9 +566,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.state.settings_info()
 
         def save_settings():
+            parse_body()
+            return self.state.save_config()
+
+        def project():
             body = parse_body()
-            path = str(body.get("path") or "").strip().strip('"').strip()
-            return self.state.save_config(path, overwrite=bool(body.get("overwrite")))
+            if body.get("new"):
+                self.state.new_project(body.get("name"))
+            else:
+                self.state.open_project(check_project_name(body.get("name")))
+            return self.state.settings_info()
 
         def start(task=None):
             body = parse_body()
@@ -492,6 +585,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         routes = {
             "/api/settings": update_settings,
             "/api/save": save_settings,
+            "/api/project": project,
             "/api/run": start,
             "/api/schem": lambda: start("schematisatie"),
         }
@@ -534,29 +628,44 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="ahn-profielen-app", description="Bekijk invoer en uitvoer van de AHN profielen in de browser."
     )
-    parser.add_argument("-c", "--config", help="INI-bestand met instellingen (zelfde als voor ahn-profielen)")
+    parser.add_argument("-w", "--werkmap", help="map met de projecten (standaard: de huidige map)")
+    parser.add_argument(
+        "-p", "--project", help=f"project (map in de werkmap) om te openen (standaard: {DEMO_DIR.name}, als dat er is)"
+    )
+    parser.add_argument(
+        "-c", "--config", help="config.ini van een project: opent dat project, met de map erboven als werkmap"
+    )
     parser.add_argument("--port", type=int, default=8050, help="poort (standaard: 8050)")
     parser.add_argument("--no-browser", action="store_true", help="open de browser niet automatisch")
-    parser.add_argument(
-        "--demo", action="store_true", help="start met het meegeleverde demotraject (standaard zonder --config)"
-    )
     args = parser.parse_args(argv)
 
+    werkmap, project = args.werkmap or os.getcwd(), args.project
+    if args.config:
+        if args.werkmap or args.project:
+            parser.error("geef --config of --werkmap/--project, niet beide")
+        if os.path.basename(args.config).lower() != ppv.CONFIG_FILE:
+            parser.error(f"--config moet de {ppv.CONFIG_FILE} van een project zijn (in de projectmap)")
+        projectmap = os.path.dirname(os.path.abspath(args.config))
+        werkmap, project = os.path.dirname(projectmap), os.path.basename(projectmap)
+    if not os.path.isdir(werkmap):
+        parser.error(f"werkmap '{werkmap}' bestaat niet")
+    if project is None and is_project(os.path.join(werkmap, DEMO_DIR.name)):
+        project = DEMO_DIR.name
+
     try:
-        config = ppv.load_config(args.config) if args.config else {}
-    except (OSError, ValueError, configparser.Error) as e:
+        state = State(werkmap, project)
+    except (OSError, ValueError, RuntimeError, configparser.Error) as e:
         parser.error(str(e))
-    demo = not args.config or args.demo
-    if demo:
-        config = demo_config()
 
     # Alleen lokaal bereikbaar: de app leest en schrijft bestanden op deze computer.
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.state = State(config, demo=demo, config_path=None if demo else os.path.abspath(args.config))
+    server.state = state
 
     url = f"http://127.0.0.1:{args.port}/"
-    if demo:
-        print(f"Geen instellingen opgegeven: demotraject {DEMO_NAME} geladen.")
+    print(f"Werkmap: {state.werkmap}")
+    print(f"Project: {state.projectmap or '(nog geen; kies of maak er een in de app)'}")
+    if state.projectmap and is_demo(state.projectmap):
+        print(f"Demotraject {DEMO_NAME} geladen.")
     print(f"AHN profielen app draait op {url} (stoppen met Ctrl+C)")
     if not args.no_browser:
         threading.Timer(0.5, webbrowser.open, args=(url,)).start()

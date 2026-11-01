@@ -32,7 +32,7 @@ def dijk_noord(tmp_path):
 
 def settings(tmp_path, dijk, **kwargs):
     kwargs = {"interval_length": 25, "cross_length": 20, "ahn_stepsize": 1, **kwargs}
-    return ppv.Settings(cur_dir=str(tmp_path / "uit"), input_line=dijk, ahn_file_loc=str(tmp_path / "ahn"), **kwargs)
+    return ppv.Settings(projectmap=str(tmp_path / "uit"), input_line=dijk, ahn_file_loc=str(tmp_path / "ahn"), **kwargs)
 
 
 def test_run_writes_all_outputs(tmp_path, dijk_noord, fake_tiles, logs):
@@ -42,7 +42,7 @@ def test_run_writes_all_outputs(tmp_path, dijk_noord, fake_tiles, logs):
     points, lines, profiles = (read_rows(p) for p in (s.output_points, s.output_cross, s.output_cross_ahn))
     assert len(points) == len(lines) == len(profiles) == 4  # 0.01, 25.01, 50.01, 75.01
     assert list(heights) == ["A"] and len(heights["A"]) == 4
-    assert s.output_dir.endswith("output_per_vak_25m")
+    assert s.output_dir == str(tmp_path / "uit" / "uitvoer")
 
     # Dwarslijn bij x=25.01 ligt in de kolom met hoogte 25.5 (cellen van 1 m, hoogte = x-midden).
     by_x = {round(props["mid_x"], 2): geom for geom, props in profiles}
@@ -82,14 +82,15 @@ def test_run_checks_outside_line_crs(tmp_path, dijk_noord, fake_tiles):
 
 
 def test_main_with_config(tmp_path, dijk_noord, fake_tiles):
-    ini = tmp_path / "config.ini"
+    (tmp_path / "uit").mkdir()
+    ini = tmp_path / "uit" / "config.ini"  # Projectmap: de map van het bestand
     ini.write_text(
-        f"[profielen]\ncur_dir = {tmp_path / 'uit'}\ninput_line = {dijk_noord}\nahn_file_loc = {tmp_path}\n"
+        f"[profielen]\ninput_line = {dijk_noord}\nahn_file_loc = {tmp_path}\n"
         "interval_length = 50\ncross_length = 20\nahn_stepsize = 2\n",
         encoding="utf-8",
     )
     assert ppv.main(["--config", str(ini), "--interval-length", "25"]) == 0  # Optie wint van het bestand
-    with fiona.open(tmp_path / "uit" / "output_per_vak_25m" / "cross_lines_ahn.shp") as source:
+    with fiona.open(tmp_path / "uit" / "uitvoer" / "cross_lines_ahn.shp") as source:
         rows = list(source)
     assert len(rows) == 4
     assert len(rows[0].geometry.coordinates) == 11  # 20 m in stappen van 2 m
@@ -110,9 +111,26 @@ def test_steps_separately(tmp_path, dijk_noord, fake_tiles):
 
 
 def test_write_config_roundtrip(tmp_path):
-    config = {"cur_dir": "uit", "input_line": r"P:\data dijk\vakken.shp", "ahn_file_loc": "ahn", "interval_length": 25.0}
-    path = tmp_path / "nieuw.ini"
-    ppv.write_config(path, config)
-    assert ppv.load_config(path) == config
-    with pytest.raises(ValueError, match="cur_dir"):
-        ppv.write_config(path, {"cur_dir": "uit ; commentaar"})
+    config = {"input_line": r"P:\data dijk\vakken.shp", "ahn_file_loc": "ahn", "interval_length": 25.0}
+    path = tmp_path / "project" / "config.ini"
+    path.parent.mkdir()
+    ppv.write_config(path, {**config, "projectmap": "elders"})
+    loaded = ppv.load_config(path)
+    assert "projectmap" not in loaded  # De map van het bestand
+    # Alle instellingen staan erin, ook de standaardwaarden; leeg alleen waar de standaard geen waarde heeft.
+    lines = path.read_text(encoding="utf-8").splitlines()
+    written = [line.split("=")[0].strip() for line in lines if line and not line.startswith((";", "["))]
+    assert written == [name for _, names in ppv.CONFIG_LAYOUT for name in names]
+    assert set(loaded) == set(written) - {"input_line_outside", "ahn_index"}
+    assert {k: loaded[k] for k in config} == config
+    assert loaded["model"] == "DTM" and loaded["schem_kwantiel"] == 0.2
+    # Met de geschreven standaardwaarden rekent de app hetzelfde als zonder.
+    projectmap = str(path.parent)
+    assert ppv.Settings(projectmap=projectmap, **loaded) == ppv.Settings(projectmap=projectmap, **config)
+    with pytest.raises(ValueError, match="input_line"):
+        ppv.write_config(path, {"input_line": "dijk ; commentaar"})
+
+
+def test_config_layout_has_all_settings():
+    names = [name for _, names in ppv.CONFIG_LAYOUT for name in names]
+    assert sorted(names) == sorted(f.name for f in ppv.dataclasses.fields(ppv.Settings) if f.name != "projectmap")

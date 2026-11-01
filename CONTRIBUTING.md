@@ -14,12 +14,13 @@ src/ahnprofielcreator/
 ├─ schematisatie.py      .prfl per vak (zie docs/schematisatie.md)
 ├─ demo.py               instellingen van het demotraject
 ├─ app/                  webapp: server.py (standaardbibliotheek) en static/ (Leaflet)
-└─ data/                 bladwijzer(_AHN6).gpkg en het demotraject (data/demo)
+└─ data/                 bladwijzer(_AHN6).gpkg
+demo/                    project met het demotraject: config.ini, invoer/ en uitvoer/ (niet in git)
 ```
 
 ## Tests
 
-In de geactiveerde omgeving, vanuit de projectmap:
+In de geactiveerde omgeving, vanuit de ontwikkelmap:
 
 ```bash
 pytest

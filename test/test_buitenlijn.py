@@ -71,7 +71,7 @@ def test_offset_lines_to_file_invalid(dijk, out, afstand, zijde, message):
 
 
 def settings(tmp_path, dijk, **kwargs):
-    return Settings(cur_dir=str(tmp_path / "uit"), input_line=dijk, ahn_file_loc="", cross_length=20, **kwargs)
+    return Settings(projectmap=str(tmp_path / "uit"), input_line=dijk, ahn_file_loc="", cross_length=20, **kwargs)
 
 
 def test_make_outside_line_writes_derived_line(tmp_path, dijk):

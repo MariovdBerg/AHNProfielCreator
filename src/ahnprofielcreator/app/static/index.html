@@ -16,6 +16,18 @@
     </h1>
 
     <section>
+      <h2>Project</h2>
+      <div class="field">
+        <label for="project-select">Project in de werkmap</label>
+        <select id="project-select"></select>
+      </div>
+      <div class="buttons">
+        <button type="button" id="btn-new-project" title="Maak een project met de mappen invoer en uitvoer in de werkmap">Nieuw project…</button>
+      </div>
+      <dl id="project-paths" class="paths"></dl>
+    </section>
+
+    <section>
       <h2>Instellingen</h2>
       <div id="demo-note" class="status" hidden></div>
       <form id="settings-form" autocomplete="off">
@@ -37,7 +49,7 @@
         </details>
         <div class="buttons">
           <button type="submit" id="btn-validate" title="Controleer de instellingen en toon de bestanden die erbij horen">Valideren</button>
-          <button type="button" id="btn-save" title="Valideer en sla de instellingen op in een .ini-bestand">Opslaan naar .ini</button>
+          <button type="button" id="btn-save" title="Valideer en sla de instellingen op in config.ini van het project">Opslaan in project</button>
         </div>
         <div class="buttons">
           <button type="button" class="step" data-task="buitenlijn" id="btn-outside" disabled>Genereer buitenlijn</button>

@@ -1,16 +1,20 @@
 # Demotraject: Lekdijk bij Schalkwijk
 
-De webapp start met dit traject als er geen `config.ini` is (of met `--demo`); zie `ahnprofielcreator.demo`.
+Dit is het project `demo` in de werkmap (de ontwikkelmap): de invoer staat in `invoer`, de uitvoer komt in
+`uitvoer` en de instellingen staan in `config.ini`. De webapp opent dit project als je geen ander kiest; zie
+ook `ahnprofielcreator.demo`.
 
 Het is een ondoorbroken stuk van 3 km uit normtraject 44-1 (Lekdijk, noordoever van de Lek, gemeente Houten),
 van 19 750 tot 22 750 m langs het traject. Bron: `nbpw_dijktrajecten_formeel.shp` (normtrajecten primaire
 waterkeringen).
 
+In `invoer`:
+
 - `demo_dijkvakken.shp`: 6 dijkvakken van 500 m (`DV_01` t/m `DV_06`), velden `vak_id`, `traject`,
   `van_m`, `tot_m`.
 - Geen buitenlijn: de app leidt die af (`outside_offset = 20`, `outside_side = links`). De Lek
   (buitenzijde) ligt links van de tekenrichting, dus de dijkvakken 20 m naar links verschoven geeft de
-  buitenlijn, als `buitenlijn_offset.shp` in de outputmap.
+  buitenlijn, als `buitenlijn_offset.shp` in de uitvoermap.
 - `2023_M_39AZ1_demo.tif`: AHN5 DTM 0,5 m van kaartblad 39AZ1, uitgeknipt tot 100 m rond de dijkvakken
   (daarbuiten nodata), zelfde grid als het blad. De app vindt het via de bladnaam, zodat de demo zonder
   download werkt bij dwarslijnen tot 200 m. Bron: AHN, CC BY 4.0.

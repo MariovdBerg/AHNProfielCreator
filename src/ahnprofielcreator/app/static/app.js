@@ -3,7 +3,6 @@
 // ---------- Hulpfuncties ----------
 
 const LABELS = {
-  cur_dir: "Werkmap (output)",
   input_line: "Dijkvakken (lijnen .shp)",
   input_line_outside: "Buitenlijn (.shp)",
   outside_offset: "Of: buitenlijn afleiden, afstand [m]",
@@ -35,7 +34,7 @@ const LABELS = {
 };
 // Categorieën in het instellingenpaneel, in deze volgorde; onbekende velden komen bij de bronnen.
 const GROUPS = {
-  bronnen: ["cur_dir", "input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
+  bronnen: ["input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
   ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
   dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
   schematisatie: [
@@ -44,6 +43,8 @@ const GROUPS = {
     "schem_min_taludbreedte", "schem_stap", "schem_voorland_fit", "schem_voorland_delen", "schem_decimalen",
   ],
 };
+// Velden met een pad naar invoer: relatief = t.o.v. de map invoer van het project.
+const INPUT_PATHS = new Set(["input_line", "input_line_outside", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"]);
 // Velden met een vaste keuze; leeg = standaardwaarde.
 const OPTIONS = {
   ahn_versie: ["5", "4", "3", "2", "1"],
@@ -308,7 +309,7 @@ function renderSettings(info) {
       input = document.createElement("input");
       input.type = field.number ? "number" : "text";
       if (field.number) input.step = "any";
-      input.placeholder = field.default ?? "";
+      input.placeholder = field.default ?? (INPUT_PATHS.has(field.name) ? "pad, of relatief t.o.v. invoer" : "");
     }
     input.id = id;
     input.name = field.name;
@@ -321,9 +322,25 @@ function renderSettings(info) {
   note.hidden = !info.demo;
   note.textContent = info.demo
     ? `Demo: ${info.demo}, met een meegeleverde AHN5-strook (geen download nodig). ` +
-      "Klik op Berekening starten, of vul eigen bestanden in."
+      "Klik op Berekening starten, of kies of maak een eigen project."
     : "";
+  renderProject(info);
   renderFiles(info.files);
+}
+
+function renderProject(info) {
+  const select = $("project-select");
+  const names = [...info.projects];
+  if (info.project && !names.includes(info.project)) names.push(info.project);
+  select.innerHTML = (info.project ? "" : '<option value="">– kies een project –</option>') +
+    names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+  select.value = info.project || "";
+  const rows = [
+    ["Werkmap", info.werkmap],
+    ["Invoer", info.input_dir],
+    ["Uitvoer", info.output_dir],
+  ].filter(([, path]) => path);
+  $("project-paths").innerHTML = rows.map(([label, path]) => `<dt>${label}</dt><dd>${escapeHtml(path)}</dd>`).join("");
 }
 
 function renderFiles(files) {
@@ -345,15 +362,19 @@ function updateButtons() {
   const value = (name) => state.settings?.fields.find((field) => field.name === name)?.value;
   const outsideGiven = Boolean(value("input_line_outside"));
   const offset = Number(value("outside_offset")) > 0;
-  $("btn-run").disabled = state.running;
-  $("btn-validate").disabled = state.running;
+  const project = Boolean(state.settings?.projectmap);
+  $("project-select").disabled = state.running;
+  $("btn-new-project").disabled = state.running;
+  $("btn-run").disabled = state.running || !project;
+  $("btn-validate").disabled = state.running || !project;
+  $("btn-save").disabled = state.running || !project;
+  $("btn-points").disabled = state.running || !project;
   $("btn-outside").disabled = state.running || outsideGiven || !offset;
   $("btn-outside").title = outsideGiven
     ? "Er is een buitenlijn (.shp) opgegeven; die wordt gebruikt"
     : offset
       ? "Leid de buitenlijn af uit de dijkvakken, om op de kaart te controleren"
       : "Vul eerst een afstand in voor de afgeleide buitenlijn (en valideer)";
-  $("btn-points").disabled = state.running;
   $("btn-cross").disabled = state.running || !exists("punten");
   $("btn-cross").title = "Stap 2: dwarslijnen door de intervalpunten" + (exists("punten") ? "" : " (genereer eerst de intervalpunten)");
   $("btn-profiles").disabled = state.running || !exists("dwarslijnen");
@@ -381,20 +402,22 @@ async function validateSettings() {
   await loadLayers();
 }
 
-// Valideer en sla op; vraagt om het pad (voorstel: het INI-bestand waarmee de app gestart is).
+// Valideer en sla op in config.ini van het project, met alle instellingen (ook de standaardwaarden).
 async function saveSettings() {
   await validateSettings();
-  const path = window.prompt("Instellingen opslaan in (.ini):", state.settings.config_path || "config.ini");
-  if (!path) return;
-  let result;
-  try {
-    result = await api("/api/save", { path });
-  } catch (e) {
-    if (!e.message.endsWith("bestaat al.") || !window.confirm(`${e.message} Overschrijven?`)) throw e;
-    result = await api("/api/save", { path, overwrite: true });
-  }
-  state.settings.config_path = result.path;
+  const result = await api("/api/save", {});
+  renderSettings(await api("/api/settings"));
   showStatus("done", `Instellingen opgeslagen in '${result.path}'.`);
+}
+
+// Open een project (of maak een nieuw met `create`), met de instellingen uit zijn config.ini.
+async function openProject(name, create = false) {
+  const info = await api("/api/project", { name, new: create });
+  state.selected = null;
+  renderSettings(info);
+  await loadLayers();
+  fitToData();
+  setRunStatus(await api("/api/run"));
 }
 
 async function loadLayers() {
@@ -681,6 +704,24 @@ $("settings-form").addEventListener("submit", async (event) => {
   try {
     await validateSettings();
     showStatus("done", "Instellingen gecontroleerd.");
+  } catch (e) {
+    setRunStatus({ state: "error", message: e.message, log: [] });
+  }
+});
+$("project-select").addEventListener("change", async (event) => {
+  try {
+    await openProject(event.target.value);
+  } catch (e) {
+    renderProject(state.settings);
+    setRunStatus({ state: "error", message: e.message, log: [] });
+  }
+});
+$("btn-new-project").addEventListener("click", async () => {
+  const name = window.prompt(`Naam van het nieuwe project (map in ${state.settings.werkmap}):`);
+  if (!name) return;
+  try {
+    await openProject(name, true);
+    showStatus("done", `Project '${name}' gemaakt; zet de invoer in '${state.settings.input_dir}'.`);
   } catch (e) {
     setRunStatus({ state: "error", message: e.message, log: [] });
   }

@@ -1,9 +1,10 @@
 @echo off
 rem Start de AHN profielen webapp in de browser.
 rem
-rem Gebruik: dubbelklik, of sleep een .ini-bestand op dit bestand, of:
-rem     start_app.bat pad\naar\config.ini
-rem Zonder argument wordt config.ini naast dit bestand gebruikt (als die bestaat).
+rem Gebruik: dubbelklik, of sleep een werkmap of de config.ini van een project op dit bestand, of:
+rem     start_app.bat pad\naar\werkmap
+rem     start_app.bat pad\naar\werkmap\project\config.ini
+rem Zonder argument is de map van dit bestand de werkmap en opent het project demo.
 setlocal
 
 rem ---- Instellingen ----------------------------------------------------------
@@ -11,11 +12,13 @@ rem Conda-omgeving met fiona, rasterio, shapely, numpy en tqdm (zie environment.
 if not defined AHN_ENV set "AHN_ENV=ahnprofielcreator"
 rem ----------------------------------------------------------------------------
 
-set "CONFIG="
-if not "%~1"=="" set "CONFIG=%~f1"
+rem Een map is de werkmap, een bestand de config.ini van een project.
+set "ARGS="
+if not "%~1"=="" (
+    if exist "%~f1\*" (set ARGS=--werkmap "%~f1") else (set ARGS=--config "%~f1")
+)
 
 cd /d "%~dp0"
-if not defined CONFIG if exist "config.ini" set "CONFIG=%~dp0config.ini"
 
 rem Zoek conda (miniforge/anaconda) en activeer de omgeving.
 set "ACTIVATE="
@@ -33,13 +36,7 @@ if defined ACTIVATE (
 python -c "import fiona, rasterio, shapely, numpy, tqdm" >nul 2>&1
 if errorlevel 1 goto :no_env
 
-if defined CONFIG (
-    echo Instellingen: %CONFIG%
-    python app.py --config "%CONFIG%"
-) else (
-    echo Geen config.ini gevonden; de app start met het demotraject.
-    python app.py
-)
+python app.py %ARGS%
 if errorlevel 1 pause
 exit /b
 
