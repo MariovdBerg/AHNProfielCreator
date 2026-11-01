@@ -21,7 +21,7 @@ vanaf de commandline of vanuit Python.
 - [Invoer](#invoer): [dijkvakken](#dijkvakken), [buitenlijn](#buitenlijn), [AHN-data](#ahn-data), [instellingen](#instellingen)
 - [Gebruik](#gebruik): [webapp](#webapp), [commandline](#commandline), [Python](#python), [schematiseren](#schematiseren-prfl)
 - [Uitvoer](#uitvoer)
-- Verder: [methode van de schematisatie](docs/schematisatie.md), [ontwikkelen en testen](CONTRIBUTING.md)
+- Verder: [methode van de schematisatie](docs/schematisatie.md), [ontwikkelen en testen](CONTRIBUTING.md), [licentie](#licentie)
 
 ## Snel starten (demo)
 
@@ -463,3 +463,11 @@ Nederlandse Excel; in pandas: `sep=";", decimal=","`):
 | `rmse` | [m] afwijking van het gekozen profiel t.o.v. het representatieve profiel |
 | `check` | uitkomst van de controle door `prflcheck`: `0` = goedgekeurd |
 | `omschrijving` | toelichting bij de controle, of de foutmelding als het vak niet geschematiseerd kon worden |
+
+## Licentie
+
+Copyright (c) 2026 HKV
+
+AHNProfielCreator valt onder de [European Union Public Licence v1.2](LICENSE) (EUPL-1.2). Meegeleverde
+software van derden houdt haar eigen licentie, zoals [Leaflet](src/ahnprofielcreator/app/static/vendor/leaflet/LICENSE)
+(BSD-2-Clause). Voor de licentie van de AHN-data zelf, zie [AHN-data](#ahn-data).
