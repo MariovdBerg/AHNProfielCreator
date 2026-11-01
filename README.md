@@ -12,6 +12,79 @@ op basis van de AHN-profielen. De app werkt als volgt:
 
 De output komt in `<cur_dir>/output_per_vak_<interval_length>m/`.
 
+## Snel starten (demo)
+
+Er komt een demotraject mee: 3 km Lekdijk bij Schalkwijk (normtraject 44-1) in zes dijkvakken, met buitenlijn
+en een uitgeknipte AHN5-strook. Daarmee draai je een volledige berekening zonder eigen data en zonder AHN-downloads.
+Nodig: [Miniforge](https://conda-forge.org/download/) of een andere conda en (voor het schematiseren) 
+internet bij het aanmaken van de omgeving. De uitleg van elke stap staat in de secties hierna.
+
+1. Haal de code op en ga naar de projectmap:
+
+   ```bash
+   git clone https://github.com/MariovdBerg/AHNProfielCreator.git
+   ```
+
+   ```bash
+   cd AHNProfielCreator
+   ```
+
+2. Maak de conda-omgeving aan (eenmalig, een paar minuten) en activeer die:
+
+   ```bash
+   conda env create -f environment.yml
+   ```
+
+   ```bash
+   conda activate ahnprofielcreator
+   ```
+
+3. Start de demo, op een van twee manieren:
+
+   - **Webapp:** dubbelklik op `start_app.bat` (zonder `config.ini` in de projectmap). De browser opent op
+     <http://127.0.0.1:8050/> met het demotraject op de kaart. Klik *Berekening starten* en daarna
+     *Schematiseren (.prfl)*, en klik op een dwarslijn voor het profiel. De output komt in
+     `output\demo\output_per_vak_10m\`.
+   - **Commandline:** installeer het pakket en reken met het voorbeeldbestand, dat al naar de demo wijst:
+
+     ```bash
+     pip install -e .
+     ```
+
+     ```bash
+     ahn-profielen --config config.example.ini --schematiseren
+     ```
+
+     De output komt in `output\output_per_vak_10m\`.
+
+De berekening duurt enkele seconden. Op de commandline eindigt de log met:
+
+```text
+Klaar, output in '...\output\output_per_vak_10m'.
+Schematiseren: één Hydra-NL profiel (.prfl) per vak, kwantiel 0.2...
+Vak DV_01: 0 berm(en), voorland 3 punten, kruin 8.97 m NAP, RMSE 0.08 m.
+...
+Klaar: 6 van 6 vakken geschematiseerd (6 zonder fouten), output in '...\output\output_per_vak_10m\prfl'.
+```
+
+In de outputmap staan dan `cross_points.shp` (300 punten), `cross_lines.shp` en `cross_lines_ahn.shp`
+(300 dwarslijnen, de laatste met AHN-hoogtes als 3D-lijn, te openen in bijv. QGIS) en in `prfl\` per vak een
+`.prfl`-bestand plus het overzicht `schematisatie.csv`.
+
+Vanuit Python gaat het zo (na `pip install -e .`):
+
+```python
+from ahnprofielcreator import Settings, run, schematise
+from ahnprofielcreator.demo import demo_config
+
+settings = Settings(**demo_config())  # output in output/demo in de huidige map
+run(settings)
+schematise(settings)
+```
+
+Voor een eigen traject: kopieer `config.example.ini` naar `config.ini` en vervang de demopaden door je eigen
+dijkvakken, buitenlijn en AHN-map (zie [Instellingen](#instellingen) en [Benodigde AHN-data](#benodigde-ahn-data)).
+
 ## Installatie
 
 Maak eenmalig de conda-omgeving aan (certifi, fiona, rasterio, shapely, numpy, tqdm, en `prflcheck` voor het
@@ -47,6 +120,10 @@ de conda-omgeving (bijv. in VS Code via *Python: Select Interpreter*), zodat die
 Kopieer `config.example.ini` naar `config.ini` en pas de paden aan. Alle instellingen staan in de
 sectie `[profielen]`; paden schrijf je zonder aanhalingstekens en een lege waarde betekent de
 standaardwaarde. Commentaar begint met `;`.
+
+Relatieve paden gelden vanaf de map waarin je het commando start, niet vanaf de map van het `.ini`-bestand.
+De paden in `config.example.ini` werken daardoor alleen vanuit de projectmap; gebruik elders absolute paden.
+`start_app.bat` gaat zelf naar de projectmap.
 
 ## Gebruik
 
