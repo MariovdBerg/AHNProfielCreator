@@ -1,7 +1,7 @@
 # Ontwikkelen en testen
 
 Voor wie aan de code werkt. Installeer eerst de omgeving en het pakket zoals in de [README](README.md#installatie),
-inclusief `pip install -e .`, en activeer de omgeving.
+inclusief `python -m pip install -e .`, en activeer de omgeving.
 
 ## Opbouw van de code
 
@@ -14,12 +14,13 @@ src/ahnprofielcreator/
 ├─ schematisatie.py      .prfl per vak (zie docs/schematisatie.md)
 ├─ demo.py               instellingen van het demotraject
 ├─ app/                  webapp: server.py (standaardbibliotheek) en static/ (Leaflet)
-└─ data/                 bladwijzer(_AHN6).gpkg en het demotraject (data/demo)
+└─ data/                 bladwijzer(_AHN6).gpkg
+demo/                    project met het demotraject: config.ini, invoer/ en uitvoer/ (niet in git)
 ```
 
 ## Tests
 
-In de geactiveerde omgeving, vanuit de projectmap:
+In de geactiveerde omgeving, vanuit de ontwikkelmap:
 
 ```bash
 pytest
@@ -39,13 +40,13 @@ de andere gevallen hebben de AHN5-tiffs (DTM 0,5 m) nodig en draaien alleen op v
 pytest -m ahn
 ```
 
-De tiffs worden standaard gezocht in `P:\OpenData\AHN\AHN5\DTM05`; een andere map geef je op met de
-omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
+De tiffs worden standaard gezocht in `ahn_data` in de ontwikkelmap (daar zet de app ook downloads neer); een
+andere map geef je op met de omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
 
 ## Referentie opnieuw maken
 
-Verandert de uitvoer bewust, maak de referentie dan opnieuw (met `AHN_TEST_DIR` als de tiffs niet op P:
-staan):
+Verandert de uitvoer bewust, maak de referentie dan opnieuw (met `AHN_TEST_DIR` als de tiffs niet in
+`ahn_data` staan):
 
 ```bash
 python test/referentie.py

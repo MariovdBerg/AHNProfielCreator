@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "ahnprofielcreator"
 version = "0.1.0"
 description = "Genereer AHN profielen (dwarslijnen met hoogtes) langs een traject, per dijkvak"
 readme = "README.md"
+license = "EUPL-1.2"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "certifi",
@@ -19,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Schematiseren tot .prfl (ProfielCheckPython, niet op PyPI)
-schem = ["prflcheck @ https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip"]
+schem = ["prflcheck @ https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/tags/v2.0.0.zip"]
 test = ["pytest"]
 
 [project.scripts]
@@ -30,7 +32,7 @@ ahn-profielen-app = "ahnprofielcreator.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"ahnprofielcreator" = ["data/*.gpkg", "data/demo/*"]
+"ahnprofielcreator" = ["data/*.gpkg"]
 "ahnprofielcreator.app" = ["static/*", "static/vendor/leaflet/*", "static/vendor/leaflet/images/*"]
 
 [tool.pytest.ini_options]

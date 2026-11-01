@@ -3,10 +3,10 @@ Testgevallen voor de regressietest (test_reference.py) en het opnieuw maken van 
 
 De gevallen zijn het demotraject en de stukken normtraject in ``test/test_input/<geval>`` (zie de README daar).
 Per geval staat de referentie in ``test/test_output/<geval>``. De AHN-hoogtes van het demotraject komen uit
-de meegeleverde strook; die van de andere gevallen uit de AHN5-tiffs in ``AHN_TEST_DIR`` (standaard de
-HKV-map op P:). Er wordt nooit gedownload en er is geen terugval op AHN4.
+de meegeleverde strook; die van de andere gevallen uit de AHN5-tiffs in ``AHN_TEST_DIR`` (standaard
+``ahn_data`` in de ontwikkelmap, de downloadmap van de app). Er wordt nooit gedownload en er is geen terugval op AHN4.
 
-Referentie opnieuw maken (na een bedoelde wijziging), in de geactiveerde omgeving vanuit de projectmap::
+Referentie opnieuw maken (na een bedoelde wijziging), in de geactiveerde omgeving vanuit de ontwikkelmap::
 
     python test/referentie.py            # alle gevallen
     python test/referentie.py ringen     # één geval
@@ -30,7 +30,7 @@ from ahnprofielcreator.profielen import CrossSectionHeights, CrossSections  # no
 
 INPUT = ROOT / "test_input"
 OUTPUT = ROOT / "test_output"
-AHN_DIR = os.environ.get("AHN_TEST_DIR", r"P:\OpenData\AHN\AHN5\DTM05")
+AHN_DIR = os.environ.get("AHN_TEST_DIR", str(ROOT.parent / "ahn_data"))
 
 GROUP_ID = "vak_id"
 AHN_STEPSIZE = 0.5
@@ -38,7 +38,7 @@ OUTSIDE_OFFSET = 20.0  # Afgeleide buitenlijn, links van de tekenrichting
 
 # Per geval: dijkvakken, buitenlijn (None = afleiden), interval en lengte van de dwarslijnen [m].
 CASES = {
-    "demo": dict(line=DEMO_DIR / "demo_dijkvakken.shp", interval=10.0, cross_length=100.0),
+    "demo": dict(line=DEMO_DIR / "invoer" / "demo_dijkvakken.shp", interval=10.0, cross_length=100.0),
     "ringen": dict(line=INPUT / "ringen" / "ringen.shp", interval=25.0, cross_length=100.0),
     "multipart": dict(line=INPUT / "multipart" / "multipart.shp", interval=10.0, cross_length=100.0),
     "korte_vakken": dict(line=INPUT / "korte_vakken" / "korte_vakken.shp", interval=10.0, cross_length=100.0),
@@ -52,7 +52,7 @@ FILES = ("buitenlijn.shp", "cross_points.shp", "cross_lines.shp", "cross_lines_a
 
 def ahn_dir(name):
     """Map met de AHN5-tiffs voor een geval: de meegeleverde strook voor de demo, anders `AHN_DIR`."""
-    return str(DEMO_DIR) if name == "demo" else AHN_DIR
+    return str(DEMO_DIR / "invoer") if name == "demo" else AHN_DIR
 
 
 def outside_line(name, out):

@@ -11,11 +11,14 @@ Omzetting van het notebook ``profielen_per_vak.ipynb``:
 Gebruik vanuit Python::
 
     from ahnprofielcreator import Settings, run
-    run(Settings(cur_dir=..., input_line=..., ...))
+    run(Settings(projectmap=..., input_line=..., ...))
 
 of vanaf de commandline::
 
-    ahn-profielen --config config.ini
+    ahn-profielen --config <werkmap>/<project>/config.ini
+
+Een project is een map in de werkmap met de invoer in ``invoer`` en de uitvoer in ``uitvoer``; relatieve
+paden naar invoerbestanden gelden ten opzichte van ``invoer``.
 """
 
 import argparse
@@ -35,11 +38,11 @@ from .profielen import CrossSectionHeights, CrossSections
 
 @dataclasses.dataclass
 class Settings:
-    # Werkmap voor opslaan
-    cur_dir: str
+    # Projectmap met de mappen invoer en uitvoer; relatieve invoerpaden gelden t.o.v. invoer
+    projectmap: str
     # Shapefile met dijkvak lijnen (bevat attribuut `group_id`)
     input_line: str
-    # Map met lokale AHN tiffs; ontbrekende bladen worden hierin gedownload
+    # Map met lokale AHN tiffs
     ahn_file_loc: str
     # Shapefile met buitenlijn, bepaalt de oriëntatie van de dwarslijnen (optioneel)
     input_line_outside: Optional[str] = None
@@ -48,7 +51,7 @@ class Settings:
     outside_side: str = "links"  # Kant van de buitenlijn t.o.v. de lijnrichting: links of rechts
     group_id: str = "vak_id"  # Attribuut in shape om te groeperen
     # Nodige AHN informatie
-    ahn_file_downloaded: Optional[str] = None  # Map voor gedownloade bladen; standaard ahn_file_loc
+    ahn_file_downloaded: Optional[str] = None  # Map voor gedownloade bladen; standaard <werkmap>/ahn_data
     ahn_index: str = ahn.DEFAULT_INDEX  # Kaartbladen met downloadlinks (bladwijzer.gpkg van AHN)
     ahn_index_id: str = ahn.DEFAULT_INDEX_ID  # Attribuut in kaartbladen met de bladnaam
     ahn_versie: int = 5  # AHN-versie; bladen zonder deze versie vallen terug op AHN4
@@ -115,10 +118,14 @@ class Settings:
             raise ValueError(f"'outside_side' moet links of rechts zijn (is '{self.outside_side}')")
         self.model, self.model_resolutie = ahn.check_product(self.model, self.model_resolutie)
         self.ahn_versie = int(self.ahn_versie)
+        for name in INPUT_PATHS:
+            setattr(self, name, input_path(self.projectmap, getattr(self, name)))
+        if not self.ahn_file_downloaded and self.projectmap:
+            self.ahn_file_downloaded = download_dir(self.projectmap)
 
     @property
     def output_dir(self):
-        return output_dir(self.cur_dir, self.interval_length)
+        return output_dir(self.projectmap)
 
     @property
     def output_points(self):
@@ -142,9 +149,7 @@ class Settings:
 
     @property
     def outside_line(self):
-        return outside_line(
-            self.cur_dir, self.interval_length, self.input_line_outside, self.outside_offset
-        )
+        return outside_line(self.projectmap, self.input_line_outside, self.outside_offset)
 
 
 def ruwheid_grenzen():
@@ -171,20 +176,46 @@ OUTPUT_SCHEM = "schematisatie.json"  # Overzicht van de schematisatie (in OUTPUT
 REMOVED_SETTINGS = ("ahn_file_prefix", "ahn_file_suffix", "ahn_file_transform")
 
 
-def output_dir(cur_dir, interval_length):
-    """Outputmap binnen de werkmap, per interval (zoals in het notebook)."""
-    return os.path.join(cur_dir, f"output_per_vak_{float(interval_length):g}m")
+# Een project is een map in de werkmap met deze mappen en (optioneel) dit instellingenbestand.
+INPUT_DIR = "invoer"
+OUTPUT_DIR = "uitvoer"
+CONFIG_FILE = "config.ini"
+DOWNLOAD_DIR = "ahn_data"  # In de werkmap, gedeeld door alle projecten
+# Instellingen met een pad naar invoer; relatief = t.o.v. de invoermap van het project.
+INPUT_PATHS = ("input_line", "input_line_outside", "ahn_file_loc", "ahn_file_downloaded", "ahn_index")
 
 
-def outside_line(cur_dir, interval_length, input_line_outside, outside_offset):
+def input_dir(projectmap):
+    """Invoermap van een project."""
+    return os.path.join(projectmap, INPUT_DIR)
+
+
+def output_dir(projectmap):
+    """Uitvoermap van een project."""
+    return os.path.join(projectmap, OUTPUT_DIR)
+
+
+def download_dir(projectmap):
+    """Standaardmap voor gedownloade AHN-bladen: in de werkmap (de map boven het project)."""
+    return os.path.join(os.path.dirname(os.path.abspath(projectmap)), DOWNLOAD_DIR)
+
+
+def input_path(projectmap, path):
+    """Pad naar invoer: een absoluut pad blijft gelijk, een relatief pad geldt t.o.v. de invoermap."""
+    if not path:
+        return path
+    return os.path.normpath(os.path.join(input_dir(projectmap), path))
+
+
+def outside_line(projectmap, input_line_outside, outside_offset):
     """
     Buitenlijn die de berekening gebruikt: de opgegeven shapefile, anders de uit de dijkvakken
-    afgeleide lijn in de outputmap (als `outside_offset` > 0), anders geen.
+    afgeleide lijn in de uitvoermap (als `outside_offset` > 0), anders geen.
     """
     if input_line_outside:
-        return input_line_outside
-    if outside_offset and float(outside_offset) > 0 and cur_dir:
-        return os.path.join(output_dir(cur_dir, interval_length), OUTPUT_OUTSIDE)
+        return input_path(projectmap, input_line_outside)
+    if outside_offset and float(outside_offset) > 0 and projectmap:
+        return os.path.join(output_dir(projectmap), OUTPUT_OUTSIDE)
     return None
 
 
@@ -353,7 +384,8 @@ def load_config(path):
     Lees instellingen uit sectie [profielen] van een INI-bestand (sleutels gelijk aan de velden van `Settings`).
 
     Lege waarden worden overgeslagen, zodat de standaardwaarde geldt. Vervallen instellingen
-    (`REMOVED_SETTINGS`) worden met een waarschuwing genegeerd.
+    (`REMOVED_SETTINGS`) worden met een waarschuwing genegeerd. Zonder `projectmap` geldt de map van het
+    bestand niet vanzelf als projectmap; dat doet `main` (de webapp kiest het project zelf).
     """
     # Geen interpolatie: '%' in paden moet gewoon kunnen. Commentaar achter een waarde met ' ;' of ' #'.
     parser = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";", "#"))
@@ -368,6 +400,11 @@ def load_config(path):
         if key in REMOVED_SETTINGS:
             get_logger().warning(f"Instelling '{key}' in '{path}' wordt niet meer gebruikt en is genegeerd.")
             continue
+        if key == "cur_dir":
+            raise ValueError(
+                f"'cur_dir' in '{path}' is vervangen door projectmap: zet het bestand als config.ini in de "
+                "projectmap (met de mappen invoer en uitvoer) en haal cur_dir weg."
+            )
         if key not in fields:
             raise ValueError(f"Onbekende instelling in '{path}': {key}")
         value = value.strip().strip('"')
@@ -383,27 +420,100 @@ def load_config(path):
     return config
 
 
-def write_config(path, config):
-    """
-    Schrijf instellingen naar sectie [profielen] van een INI-bestand, leesbaar met `load_config`.
+# Indeling van een INI-bestand: per groep de instellingen met een regel uitleg (zie `write_config`).
+CONFIG_LAYOUT = (
+    (
+        "Invoer (relatieve paden gelden t.o.v. de map invoer van het project)",
+        {
+            "input_line": "Shapefile met de dijkvakken (lijnen in RD New), één feature per vak",
+            "group_id": "Attribuut in de dijkvakken (en eventueel de buitenlijn) met de naam van het vak",
+            "input_line_outside": "Shapefile met de buitenlijn (bepaalt welke kant buiten ligt); leeg = geen of afleiden",
+            "outside_offset": "[m] zonder buitenlijn: leid die af door de dijkvakken zoveel te verschuiven "
+            "(kleiner dan de halve cross_length); 0 = niet afleiden",
+            "outside_side": "Kant van de afgeleide buitenlijn t.o.v. de tekenrichting: links of rechts",
+        },
+    ),
+    (
+        "AHN",
+        {
+            "ahn_file_loc": "Map met lokale AHN-tiffs (bijv. D:\\AHN\\AHN5\\DTM05); . = de map invoer",
+            "ahn_file_downloaded": "Map voor gedownloade kaartbladen (~200 MB per blad bij 0,5 m), ook hier wordt gezocht; "
+            f"..\\..\\{DOWNLOAD_DIR} = {DOWNLOAD_DIR} in de werkmap, gedeeld door alle projecten",
+            "ahn_index": "Kaartbladen met downloadlinks (.gpkg/.shp); leeg = de meegeleverde bladwijzer.gpkg",
+            "ahn_index_id": "Attribuut in de kaartbladen met de bladnaam",
+            "ahn_versie": "AHN-versie (1 - 5); bladen zonder deze versie vallen terug op AHN4",
+            "model": "DTM (maaiveld) of DSM (oppervlakte)",
+            "model_resolutie": "[m] resolutie van het AHN-model: 0.5 of 5",
+        },
+    ),
+    (
+        "Dwarslijnen",
+        {
+            "interval_length": "[m] afstand tussen de profielen langs elk vak",
+            "cross_length": "[m] lengte van een dwarslijn, de helft aan elke kant van de dijklijn; "
+            "200 = 100 m buiten, past bij HR-locaties op ~100 m van de kruin",
+            "ahn_stepsize": "[m] afstand tussen de hoogtepunten langs een dwarslijn",
+        },
+    ),
+    (
+        "Schematisatie tot één Hydra-NL profiel (.prfl) per vak, optioneel na de berekening; nodig: buitenlijn en prflcheck",
+        {
+            "schem_kwantiel": "[-] kwantiel van de hoogtes van de profielen in een vak (lager = voorzichtiger, lager profiel)",
+            "schem_kruin_zoekafstand": "[m] zoek de kruin (hoogste punt) binnen deze afstand van de dijklijn",
+            "schem_ruwheid": "[-] ruwheid van het talud in het .prfl, 0.5 - 1.0 (1.0 = gras)",
+            "schem_voorland": "Voorland (buiten de teen) in het .prfl: ja of nee",
+            "schem_min_bermbreedte": "[m] een berm telt mee als die minstens zo breed is",
+            "schem_min_taludhoogte": "[m] en de taluds onder en boven de berm minstens zo hoog zijn "
+            "(anders is het voorland of de kruin)",
+            "schem_berm_winst_rel": "[-] en de afwijking (RMSE) van het profiel door de berm minstens deze fractie daalt (0.2 = 20%)",
+            "schem_berm_winst_abs": "[m] en ook minstens zoveel daalt",
+            "schem_min_taludbreedte": "[m] minimale breedte van een talud",
+            "schem_stap": "[m] raster van de knikpunten en van het representatieve profiel",
+            "schem_voorland_fit": "[m] in de fit telt het voorland alleen tot zover (plus de dijkbreedte) buiten de teen",
+            "schem_voorland_delen": "Delen voorland in de fit, 1 - 3; meer delen kan een berm aan de teen als voorland zien",
+            "schem_decimalen": "Decimalen van x en z in het .prfl, 1 - 6; minder decimalen geeft een grotere marge op de "
+            "hellingsgrenzen",
+        },
+    ),
+)
+CONFIG_HEADER = (
+    "Instellingen van een project voor ahn-profielen en de webapp. Alle instellingen staan erin, ook de",
+    "standaardwaarden, zodat zichtbaar is wat gebruikt wordt. De projectmap is de map van dit bestand.",
+    "Gebruik: open het project in de webapp, of: ahn-profielen --config <dit bestand>",
+    "Paden zonder aanhalingstekens. Een lege waarde betekent de standaardwaarde.",
+)
 
-    Alleen de opgegeven waarden, in de volgorde van `Settings`; de rest blijft de standaardwaarde.
+
+def config_default(name):
+    """Standaardwaarde van een instelling zoals die in een INI-bestand komt."""
+    if name == "ahn_file_downloaded":
+        return os.path.join("..", "..", DOWNLOAD_DIR)  # Relatief t.o.v. invoer: <werkmap>/ahn_data
+    if name == "ahn_index":
+        return ""  # De meegeleverde index; het pad hangt af van de installatie
+    default = {f.name: f for f in dataclasses.fields(Settings)}[name].default
+    return "" if default in (dataclasses.MISSING, None) else default
+
+
+def write_config(path, config, header=CONFIG_HEADER):
     """
-    lines = [
-        "; Instellingen voor ahn-profielen en de webapp (opgeslagen vanuit de webapp).",
-        "; Gebruik: ahn-profielen --config <dit bestand>. Ontbrekende waarden: standaardwaarde.",
-        "",
-        f"[{CONFIG_SECTION}]",
-    ]
-    for field in dataclasses.fields(Settings):
-        value = config.get(field.name)
-        if value is None or value == "":
-            continue
-        value = str(value)
-        # Dit zou `load_config` als (begin van) commentaar of als volgende regel lezen.
-        if "\n" in value or "\r" in value or any(c in value for c in (" ;", " #", "\t;", "\t#")):
-            raise ValueError(f"'{field.name}' bevat een regeleinde of ' ;'/' #' en kan niet in een INI-bestand")
-        lines.append(f"{field.name} = {value}")
+    Schrijf alle instellingen naar sectie [profielen] van een INI-bestand, leesbaar met `load_config`.
+
+    Instellingen die niet in `config` staan krijgen hun standaardwaarde (`config_default`), zodat het bestand
+    laat zien wat er gebruikt wordt. Elke instelling krijgt een regel uitleg, `header` komt bovenaan. De
+    projectmap staat er niet in: dat is de map van het bestand.
+    """
+    lines = [f"; {line}" for line in header] + ["", f"[{CONFIG_SECTION}]"]
+    for title, help_texts in CONFIG_LAYOUT:
+        lines += ["", f"; ---- {title} ----"]
+        for name, help_text in help_texts.items():
+            value = config.get(name)
+            if value is None or value == "":
+                value = config_default(name)
+            value = str(value)
+            # Dit zou `load_config` als (begin van) commentaar of als volgende regel lezen.
+            if "\n" in value or "\r" in value or any(c in value for c in (" ;", " #", "\t;", "\t#")):
+                raise ValueError(f"'{name}' bevat een regeleinde of ' ;'/' #' en kan niet in een INI-bestand")
+            lines += [f"; {help_text}", f"{name} = {value}".rstrip()]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -413,8 +523,10 @@ def parse_args(argv=None):
         prog="ahn-profielen",
         description="Genereer AHN profielen (dwarslijnen met hoogtes) langs een traject, per dijkvak.",
     )
-    parser.add_argument("-c", "--config", help="INI-bestand met instellingen; losse opties overschrijven deze")
-    parser.add_argument("--cur-dir", help="werkmap voor opslaan van de output")
+    parser.add_argument(
+        "-c", "--config", help="INI-bestand met instellingen (standaard projectmap: de map van dit bestand); losse opties overschrijven deze"
+    )
+    parser.add_argument("--projectmap", help="projectmap met de mappen invoer en uitvoer")
     parser.add_argument("--input-line", help="shapefile met dijkvak lijnen")
     parser.add_argument("--input-line-outside", help="shapefile met buitenlijn (oriëntatie dwarslijnen)")
     parser.add_argument(
@@ -432,7 +544,7 @@ def parse_args(argv=None):
     parser.add_argument("--ahn-index-id", help="attribuut met bladnaam in de kaartbladen (standaard: AHN)")
     parser.add_argument("--ahn-file-loc", help="map met de AHN tiff-files")
     parser.add_argument(
-        "--ahn-file-downloaded", help="map voor gedownloade AHN-bladen (standaard: --ahn-file-loc)"
+        "--ahn-file-downloaded", help="map voor gedownloade AHN-bladen (standaard: ahn_data in de werkmap)"
     )
     parser.add_argument("--ahn-versie", type=int, help="AHN-versie (standaard: 5, met terugval op 4)")
     parser.add_argument("--model", help="DTM of DSM (standaard: DTM)")
@@ -478,6 +590,8 @@ def main(argv=None):
         config = load_config(args.config) if args.config else {}
     except (OSError, ValueError, configparser.Error) as e:
         parser.error(str(e))
+    if args.config:
+        config.setdefault("projectmap", os.path.dirname(os.path.abspath(args.config)))
     overrides = {k: v for k, v in vars(args).items() if k not in ("config", "schematiseren") and v is not None}
     config.update(overrides)
 

@@ -1,36 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-Demotraject dat met het pakket meekomt: 3 km Lekdijk bij Schalkwijk (normtraject 44-1), in 6 dijkvakken.
+Demotraject in de ontwikkelmap: 3 km Lekdijk bij Schalkwijk (normtraject 44-1), in 6 dijkvakken.
 Er is geen buitenlijn meegeleverd: die wordt afgeleid door de dijkvakken 20 m naar links te verschuiven.
 
-De AHN5-hoogtes (DTM 0,5 m) staan in een uitgeknipte strook van 100 m aan weerszijden van de dijk, met
-de naam van het kaartblad (``2023_M_39AZ1_demo.tif``). De demo werkt daardoor zonder downloads, zolang
-de dwarslijnen niet langer zijn dan 200 m. Bron AHN: CC BY 4.0, AHN.
+Het is het project ``demo`` in de werkmap (de map met ``src``): de invoer in ``demo/invoer``, de uitvoer in
+``demo/uitvoer`` en de instellingen in ``demo/config.ini``. De AHN5-hoogtes (DTM 0,5 m) staan in een
+uitgeknipte strook van 100 m aan weerszijden van de dijk, met de naam van het kaartblad
+(``2023_M_39AZ1_demo.tif``). De demo werkt daardoor zonder downloads, zolang de dwarslijnen niet langer zijn
+dan 200 m. Bron AHN: CC BY 4.0, AHN.
 """
 
 import os
+from pathlib import Path
 
-from .ahn import DATA_DIR
+from . import profielen_per_vak as ppv
 
-DEMO_DIR = DATA_DIR / "demo"
+DEMO_DIR = Path(__file__).resolve().parents[2] / "demo"
 DEMO_NAME = "Lekdijk bij Schalkwijk (traject 44-1)"
 
 
-def demo_config(cur_dir=None):
+def demo_config(projectmap=None):
     """
-    Instellingen voor het demotraject (sleutels als in `Settings`).
+    Instellingen voor het demotraject (sleutels als in `Settings`), uit ``demo/config.ini``.
 
-    De output komt in `cur_dir`, standaard ``output/demo`` in de huidige map; het pakket zelf kan
-    alleen-lezen zijn. Ontbrekende bladen (bij langere dwarslijnen) worden daar ook in gedownload.
+    Met `projectmap` komt de uitvoer daar in plaats van in ``demo/uitvoer``; de invoerpaden wijzen dan
+    naar de invoer van de demo.
     """
-    cur_dir = cur_dir or os.path.join(os.getcwd(), "output", "demo")
-    return {
-        "cur_dir": cur_dir,
-        "input_line": str(DEMO_DIR / "demo_dijkvakken.shp"),
-        # Geen buitenlijn meegeleverd: de app leidt die af. De Lek (buitenzijde) ligt links van de tekenrichting.
-        "outside_offset": 20.0,
-        "outside_side": "links",
-        "group_id": "vak_id",
-        "ahn_file_loc": str(DEMO_DIR),
-        "ahn_file_downloaded": os.path.join(cur_dir, "ahn_data"),
-    }
+    config = ppv.load_config(DEMO_DIR / ppv.CONFIG_FILE)
+    if projectmap:
+        for name in ppv.INPUT_PATHS:
+            if name in config:
+                config[name] = ppv.input_path(str(DEMO_DIR), config[name])
+    config["projectmap"] = str(projectmap or DEMO_DIR)
+    return config
+
+
+def is_demo(projectmap):
+    """True als `projectmap` het demotraject is."""
+    return bool(projectmap) and os.path.isdir(projectmap) and os.path.samefile(projectmap, DEMO_DIR)

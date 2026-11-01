@@ -1,7 +1,7 @@
 """
 Start de AHN profielen webapp direct vanuit de repository (installeren is niet nodig).
 
-    python app.py --config config.ini
+    python app.py [--werkmap <werkmap>] [--project <naam>]
 """
 
 import sys

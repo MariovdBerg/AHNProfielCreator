@@ -21,7 +21,7 @@ vanaf de commandline of vanuit Python.
 - [Invoer](#invoer): [dijkvakken](#dijkvakken), [buitenlijn](#buitenlijn), [AHN-data](#ahn-data), [instellingen](#instellingen)
 - [Gebruik](#gebruik): [webapp](#webapp), [commandline](#commandline), [Python](#python), [schematiseren](#schematiseren-prfl)
 - [Uitvoer](#uitvoer)
-- Verder: [methode van de schematisatie](docs/schematisatie.md), [ontwikkelen en testen](CONTRIBUTING.md)
+- Verder: [methode van de schematisatie](docs/schematisatie.md), [ontwikkelen en testen](CONTRIBUTING.md), [licentie](#licentie)
 
 ## Snel starten (demo)
 
@@ -30,7 +30,7 @@ uitgeknipte AHN5-strook. De buitenlijn leidt de app zelf af uit de dijkvakken. D
 berekening zonder eigen data en zonder AHN-downloads. Nodig: [Miniforge](https://conda-forge.org/download/) of
 een andere conda en (voor het schematiseren) internet bij het aanmaken van de omgeving.
 
-1. Haal de code op en ga naar de projectmap:
+1. Haal de code op en ga naar de ontwikkelmap (de map met `src`):
 
    ```bash
    git clone https://github.com/MariovdBerg/AHNProfielCreator.git
@@ -52,48 +52,48 @@ een andere conda en (voor het schematiseren) internet bij het aanmaken van de om
 
 3. Start de demo, op een van twee manieren:
 
-   - **Webapp:** dubbelklik op `start_app.bat` (zonder `config.ini` in de projectmap). De browser opent op
-     <http://127.0.0.1:8050/> met het demotraject op de kaart. Klik *Berekening starten* en daarna
-     *Schematiseren (.prfl)*, en klik op een dwarslijn voor het profiel. De output komt in
-     `output\demo\output_per_vak_10m\`.
-   - **Commandline:** installeer het pakket en reken met het voorbeeldbestand, dat al naar de demo wijst:
+   - **Webapp:** dubbelklik op `start_app.bat`. De browser opent op <http://127.0.0.1:8050/> met het project
+     `demo` op de kaart. Klik *Berekening starten* en daarna *Schematiseren (.prfl)*, en klik op een dwarslijn
+     voor het profiel. De uitvoer komt in `demo\uitvoer\`.
+   - **Commandline:** installeer het pakket en reken met de instellingen van de demo:
 
      ```bash
-     pip install -e .
+     python -m pip install -e .
      ```
 
      ```bash
-     ahn-profielen --config config.example.ini --schematiseren
+     ahn-profielen --config demo\config.ini --schematiseren
      ```
 
-     De output komt in `output\output_per_vak_10m\`.
+     De uitvoer komt in `demo\uitvoer\`.
 
 De berekening duurt enkele seconden. Op de commandline eindigt de log met:
 
 ```text
-Klaar, output in '...\output\output_per_vak_10m'.
+Klaar, output in '...\demo\uitvoer'.
 Schematiseren: één Hydra-NL profiel (.prfl) per vak, kwantiel 0.2...
 Vak DV_01: 0 berm(en), voorland 3 punten, kruin 8.97 m NAP, RMSE 0.08 m.
 ...
-Klaar: 6 van 6 vakken geschematiseerd (6 zonder fouten), output in '...\output\output_per_vak_10m\prfl'.
+Klaar: 6 van 6 vakken geschematiseerd (6 zonder fouten), output in '...\demo\uitvoer\prfl'.
 ```
 
-In de outputmap staan dan de afgeleide buitenlijn, 300 intervalpunten, 300 dwarslijnen met AHN-hoogtes en per
+In de uitvoermap staan dan de afgeleide buitenlijn, 300 intervalpunten, 300 dwarslijnen met AHN-hoogtes en per
 vak een `.prfl`-bestand; zie [Uitvoer](#uitvoer) voor wat er in elk bestand staat.
 
-Vanuit Python gaat het zo (na `pip install -e .`):
+Vanuit Python gaat het zo (na `python -m pip install -e .`):
 
 ```python
 from ahnprofielcreator import Settings, run, schematise
 from ahnprofielcreator.demo import demo_config
 
-settings = Settings(**demo_config())  # output in output/demo in de huidige map
+settings = Settings(**demo_config())  # uitvoer in demo/uitvoer
 run(settings)
 schematise(settings)
 ```
 
-Voor een eigen traject: kopieer `config.example.ini` naar `config.ini` en vervang de demopaden door je eigen
-dijkvakken en AHN-map; zie [Invoer](#invoer).
+Voor een eigen traject: maak een project in de werkmap (in de webapp met *Nieuw project…*), zet je
+dijkvakken in de map `invoer` en vul de instellingen in; zie [Werkmap en projecten](#werkmap-en-projecten) en
+[Invoer](#invoer).
 
 ## Installatie
 
@@ -106,16 +106,19 @@ conda env create -f environment.yml
 
 Bestaat de omgeving al, installeer `prflcheck` ([ProfielCheckPython](https://github.com/MariovdBerg/ProfielCheckPython),
 niet op PyPI) dan los, in de geactiveerde omgeving. Zonder `prflcheck` werkt alles behalve het schematiseren.
+Gebruik `python -m pip`: een losse `pip` kan die van een andere Python zijn, en dan komt het pakket buiten de
+omgeving terecht (bijv. in `%APPDATA%\Python`). De versie ligt vast op v2.0.0, omdat de schematisatie de
+grenzen van de controle uit `prflcheck` gebruikt.
 
 ```bash
-pip install https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip
+python -m pip install https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/tags/v2.0.0.zip
 ```
 
 Voor de webapp via `start_app.bat` is dit genoeg. Voor het commando `ahn-profielen` of gebruik vanuit eigen
-scripts installeer je daarna nog het pakket, in die omgeving en vanuit de projectmap:
+scripts installeer je daarna nog het pakket, in die omgeving en vanuit de ontwikkelmap:
 
 ```bash
-pip install -e .
+python -m pip install -e .
 ```
 
 **Activeer de omgeving altijd** (`conda activate ahnprofielcreator`) voordat je Python, `ahn-profielen` of
@@ -124,6 +127,33 @@ activeren, dan vindt Windows de DLL's van numpy, GDAL en PROJ niet (die staan in
 stopt dan zonder melding, of met een fout zoals `Windows fatal exception: code 0xc06d007f`, of
 `Cannot find ... (GDAL_DATA is not defined)`. Dat geldt ook voor een IDE: kies daar de interpreter van
 de conda-omgeving (bijv. in VS Code via *Python: Select Interpreter*), zodat die de omgeving activeert.
+
+## Werkmap en projecten
+
+De app werkt in een **werkmap** met **projecten**. Een project is een map in de werkmap met de invoer, de
+uitvoer en de instellingen:
+
+```text
+<werkmap>\
+├─ ahn_data\            gedownloade AHN-bladen, gedeeld door alle projecten
+├─ demo\                het meegeleverde demotraject
+│  ├─ config.ini        instellingen van het project
+│  ├─ invoer\           dijkvakken, (eventueel) buitenlijn en lokale AHN-tiffs
+│  └─ uitvoer\          resultaat van de berekening en de schematisatie
+└─ <eigen project>\
+   ├─ config.ini
+   ├─ invoer\
+   └─ uitvoer\
+```
+
+- **Werkmap:** standaard de map waarin je de app start. `start_app.bat` start in de ontwikkelmap (de map met
+  `src`), zodat `demo` daar een van de projecten is.
+- **Projectmap:** de map van het project, met de mappen `invoer` en `uitvoer`. Niet te verwarren met de
+  git-projectmap waarin ontwikkeld wordt.
+- **Invoer:** relatieve paden in de instellingen gelden ten opzichte van `invoer`, bijv.
+  `input_line = dijkvakken.shp` of `ahn_file_loc = .` (de tiffs staan in `invoer` zelf). Absolute paden
+  (bijv. `D:\AHN\AHN5\DTM05`) werken ook.
+- **Uitvoer:** alles komt in `uitvoer`. Een nieuwe berekening overschrijft de vorige, ook met een ander interval.
 
 ## Invoer
 
@@ -134,7 +164,7 @@ Wat je aanlevert, in het kort:
 | Dijkvakken: lijnen, één per vak | ja | `input_line`, `group_id` |
 | Buitenlijn: geeft aan welke kant buiten ligt | nee, maar nodig voor de richting van de dwarslijnen en voor het schematiseren; kan ook afgeleid worden | `input_line_outside` of `outside_offset` + `outside_side` |
 | AHN-tiffs: lokale map; ontbrekende bladen worden gedownload | ja (een map) | `ahn_file_loc`, `ahn_file_downloaded` |
-| Werkmap voor de uitvoer | ja | `cur_dir` |
+| Project: map met `invoer` en `uitvoer` | ja | de map van `config.ini`, of `projectmap` |
 
 ### Dijkvakken
 
@@ -165,7 +195,7 @@ niet geschematiseerd worden. Er zijn twee manieren:
    per vak de eigen buitenlijn gebruikt; dan moet elk vak er een hebben.
 2. **Afleiden** (zoals "Offset Curves" in QGIS): laat `input_line_outside` leeg en zet `outside_offset` op een
    afstand in meters, bijv. `20`. De dijkvakken worden dan zoveel naar links of rechts (`outside_side`) van hun
-   tekenrichting verschoven en weggeschreven als `buitenlijn_offset.shp` in de outputmap. Het demotraject werkt
+   tekenrichting verschoven en weggeschreven als `buitenlijn_offset.shp` in de uitvoermap. Het demotraject werkt
    zo. Let op:
    - De afstand moet kleiner zijn dan de halve `cross_length`, anders snijden de dwarslijnen de lijn niet.
    - Links/rechts is ten opzichte van de richting waarin elk dijkvak getekend is. Zijn de vakken niet
@@ -179,10 +209,10 @@ punten in rood.
 
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app zelf.
 
-1. **Map met AHN-tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs. Binnen HKV bijv.
-   `P:\OpenData\AHN\AHN5\DTM05`.
+1. **Map met AHN-tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs, bijv.
+   `D:\AHN\AHN5\DTM05`.
 2. **Map voor downloads** (`ahn_file_downloaded`, optioneel): hier komen gedownloade bladen en hier wordt ook
-   gezocht. Leeg = `ahn_file_loc`. Handig als `ahn_file_loc` alleen-lezen is of als je er geen downloads in wilt.
+   gezocht. Leeg = `ahn_data` in de werkmap, zodat alle projecten dezelfde downloads gebruiken.
 3. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`):
    de bladwijzer van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
    ([bron](https://basisdata.nl/hwh-ahn/AUX/bladwijzer.gpkg), [kaart](https://basisdata.nl/hwh-ahn/AUX/bladwijzer/index.html)).
@@ -217,7 +247,7 @@ De app valt dan niet terug op AHN4; kies zo nodig zelf `ahn_versie = 4`.
 **Let op:**
 - Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
 - AHN6 gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg` (ook
-  meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in de log;
+  meegeleverd, de AHN6-bladindeling van [AHN](https://www.ahn.nl)) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in de log;
   voor de berekening gebruikt de app AHN6 (nog) niet.
 
 Licentie: AHN1 t/m AHN4 vallen onder CC0, AHN5 en later onder CC BY 4.0 (bronvermelding: AHN).
@@ -226,25 +256,33 @@ verlopen tussencertificaat kan bevatten; lukt dat niet, dan die van Windows.
 
 ### Instellingen
 
-De instellingen staan in een `.ini`-bestand. Kopieer `config.example.ini` naar `config.ini` en pas de paden
-aan. Alle instellingen staan in de sectie `[profielen]`; paden schrijf je zonder aanhalingstekens en een lege
-waarde betekent de standaardwaarde. Commentaar begint met `;`. In de webapp kun je de instellingen ook
-aanpassen en opslaan.
+De instellingen van een project staan in `config.ini` in de projectmap. In de webapp pas je ze aan en sla je
+ze op met *Opslaan in project*; met de hand kun je `config.example.ini` kopiëren naar `<project>\config.ini`.
+Alle instellingen staan in de sectie `[profielen]`; paden schrijf je zonder aanhalingstekens en een lege
+waarde betekent de standaardwaarde. Commentaar begint met `;`.
 
-Relatieve paden gelden vanaf de map waarin je het commando start, niet vanaf de map van het `.ini`-bestand.
-De paden in `config.example.ini` werken daardoor alleen vanuit de projectmap; gebruik elders absolute paden.
-`start_app.bat` gaat zelf naar de projectmap.
+Een `config.ini` die de app schrijft (bij *Nieuw project…* en bij *Opslaan in project*) bevat **alle**
+instellingen, ook die op de standaardwaarde staan, met per instelling een regel uitleg. Zo is altijd te zien
+welke waarden gebruikt zijn. Alleen `ahn_index` blijft leeg als je de meegeleverde `bladwijzer.gpkg` gebruikt
+(het pad daarvan hangt af van de installatie), en `ahn_file_downloaded` staat standaard op `..\..\ahn_data`
+(`ahn_data` in de werkmap, gezien vanuit `invoer`). `demo\config.ini` en `config.example.ini` zijn ook zo
+gemaakt. Eigen commentaar in het bestand gaat bij opslaan vanuit de app verloren.
+
+Relatieve paden naar invoer gelden ten opzichte van de map `invoer` van het project (zie
+[Werkmap en projecten](#werkmap-en-projecten)). De projectmap zelf staat niet in het bestand: dat is de map
+van `config.ini`. Een oud bestand met `cur_dir` geeft een foutmelding; verplaats het naar een projectmap en
+haal `cur_dir` weg.
 
 | Instelling | Standaard | Betekenis |
 |---|---|---|
-| `cur_dir` | (verplicht) | werkmap; de uitvoer komt in `<cur_dir>\output_per_vak_<interval_length>m` |
+| `projectmap` | de map van `config.ini` | projectmap met `invoer` en `uitvoer`; alleen nodig vanuit Python of met `--projectmap` |
 | `input_line` | (verplicht) | shapefile met de dijkvakken |
 | `group_id` | `vak_id` | vak-attribuut in de dijkvakken (en eventueel de buitenlijn) |
 | `input_line_outside` | leeg | shapefile met de buitenlijn |
 | `outside_offset` | leeg (= niet afleiden) | [m] zonder buitenlijn: leid die af door de dijkvakken zoveel te verschuiven |
 | `outside_side` | `links` | kant van de afgeleide buitenlijn t.o.v. de tekenrichting: `links` of `rechts` |
-| `ahn_file_loc` | (verplicht) | map met lokale AHN-tiffs |
-| `ahn_file_downloaded` | leeg (= `ahn_file_loc`) | map voor gedownloade bladen |
+| `ahn_file_loc` | (verplicht) | map met lokale AHN-tiffs (`.` = de map `invoer`) |
+| `ahn_file_downloaded` | leeg (= `<werkmap>\ahn_data`) | map voor gedownloade bladen |
 | `ahn_versie`, `model`, `model_resolutie` | `5`, `DTM`, `0.5` | welke AHN-data; zie [AHN-data](#ahn-data) |
 | `ahn_index`, `ahn_index_id` | `bladwijzer.gpkg`, `AHN` | kaartbladindex met downloadlinks |
 | `interval_length` | `10` | [m] afstand tussen de dwarslijnen langs elk vak |
@@ -258,21 +296,24 @@ De paden in `config.example.ini` werken daardoor alleen vanuit de projectmap; ge
 
 Een lokale webapp om invoer en uitvoer te bekijken en de berekening te starten. Installeren van
 het pakket is niet nodig: dubbelklik op `start_app.bat`. Dat activeert de conda-omgeving
-`ahnprofielcreator`, gebruikt `config.ini` naast het bestand (als die er is) en opent de browser op
-<http://127.0.0.1:8050/>. Stoppen: sluit het venster of druk Ctrl+C.
+`ahnprofielcreator`, start de app met de ontwikkelmap als werkmap en het project `demo` (het
+[demotraject](#snel-starten-demo)) geopend, en opent de browser op <http://127.0.0.1:8050/>. Stoppen: sluit
+het venster of druk Ctrl+C.
 
-- **Demo:** zonder `config.ini` (of met `--demo`) start de app met het [demotraject](#snel-starten-demo).
-  De output komt dan in `output\demo`.
-- Ander configuratiebestand: sleep het `.ini`-bestand op `start_app.bat`, of `start_app.bat pad\naar\config.ini`.
+- **Ander project:** kies het in de app onder *Project*, of maak er een met *Nieuw project…* (maakt de mappen
+  `invoer` en `uitvoer` en een volledige `config.ini` met de standaardwaarden). Of sleep de `config.ini` van een project op `start_app.bat`.
+- **Andere werkmap:** sleep de map op `start_app.bat`, of `start_app.bat pad\naar\werkmap`.
 - Andere conda-omgeving: pas `AHN_ENV` bovenin `start_app.bat` aan (of zet de omgevingsvariabele `AHN_ENV`).
 
 Zonder het `.bat`-bestand, in een geactiveerde omgeving:
 
 ```bash
-python app.py --config config.ini
+python app.py --werkmap pad\naar\werkmap --project naam
 ```
 
-Andere poort: `--port`. Na `pip install -e .` werkt ook `ahn-profielen-app --config config.ini`.
+Zonder `--werkmap` is de huidige map de werkmap; zonder `--project` opent de app `demo` als dat er is.
+`--config <project>\config.ini` opent dat project met de map erboven als werkmap. Andere poort: `--port`.
+Na `python -m pip install -e .` werkt ook `ahn-profielen-app`.
 
 Wat de app laat zien:
 
@@ -282,10 +323,12 @@ Wat de app laat zien:
 - **Profiel:** klik op een dwarslijn voor het hoogteprofiel, met de andere profielen uit het vak in
   grijs. Bladeren met ◀ ▶ of de pijltjestoetsen. De x-as is de afstand tot de dijklijn; met een
   buitenlijn staat de buitenzijde links.
+- **Project:** kies een project uit de werkmap of maak een nieuw; daaronder staan de werkmap en de mappen
+  `invoer` en `uitvoer` van het project.
 - **Instellingen:** aanpassen en *Valideren* controleert ze en toont de bestanden bij die instellingen
-  (de instellingen gelden dan voor de app, maar staan nog niet in een bestand). *Opslaan naar .ini*
-  valideert en slaat ze op in een (nieuw) `.ini`-bestand, te gebruiken met `--config` of `start_app.bat`.
-  Commentaar in een bestaand bestand dat je overschrijft gaat verloren.
+  (de instellingen gelden dan voor de app, maar staan nog niet in een bestand). *Opslaan in project*
+  valideert en slaat alle instellingen (ook de standaardwaarden) op in `config.ini` van het project; het
+  formulier toont daarna wat er in het bestand staat.
 - **Stappen:** *Berekening starten* voert alle stappen uit (behalve het schematiseren) en laadt daarna het
   resultaat. Elke stap kan ook los: *Genereer buitenlijn* (alleen zonder opgegeven buitenlijn en met een
   afstand), *Genereer intervalpunten*, *Genereer dwarslijnen* en *Genereer AHN-profielen*. Een stap
@@ -304,13 +347,13 @@ De app is alleen bereikbaar vanaf de eigen computer (127.0.0.1).
 
 ### Commandline
 
-Na `pip install -e .`, in een geactiveerde omgeving:
+Na `python -m pip install -e .`, in een geactiveerde omgeving:
 
 ```bash
-ahn-profielen --config config.ini
+ahn-profielen --config pad\naar\project\config.ini
 ```
 
-Losse opties overschrijven de waarden uit het configuratiebestand, bijv. `--interval-length 25`. Met
+De projectmap is de map van `config.ini` (of geef `--projectmap`). Losse opties overschrijven de waarden uit het configuratiebestand, bijv. `--interval-length 25`. Met
 `--schematiseren` volgt daarna het schematiseren. Zie `ahn-profielen --help` voor alle opties.
 `python -m ahnprofielcreator` werkt ook.
 
@@ -320,13 +363,13 @@ Losse opties overschrijven de waarden uit het configuratiebestand, bijv. `--inte
 from ahnprofielcreator import Settings, run, schematise
 
 settings = Settings(
-    cur_dir=r"...\profiel_shapes",
-    input_line=r"...\dijkvakken.shp",
-    input_line_outside=r"...\buitenlijn.shp",  # of: None en outside_offset=20 om de buitenlijn af te leiden
+    projectmap=r"...\werkmap\mijn_project",  # met de mappen invoer en uitvoer
+    input_line="dijkvakken.shp",  # relatief t.o.v. invoer
+    input_line_outside="buitenlijn.shp",  # of: None en outside_offset=20 om de buitenlijn af te leiden
     outside_side="links",
     group_id="vak_id",
-    ahn_file_loc=r"...\ahn_data",  # lokale tiffs
-    ahn_file_downloaded=None,  # map voor downloads; None = ahn_file_loc
+    ahn_file_loc=r"D:\AHN\AHN5\DTM05",  # lokale tiffs
+    ahn_file_downloaded=None,  # map voor downloads; None = <werkmap>\ahn_data
     ahn_versie=5,  # standaard; terugval op AHN4
     model="DTM",
     model_resolutie=0.5,
@@ -338,7 +381,8 @@ run(settings)
 schematise(settings)  # optioneel
 ```
 
-`run` geeft per vak de dwarslijnen met hoogtes terug; de bestanden staan daarna in `settings.output_dir`.
+`run` geeft per vak de dwarslijnen met hoogtes terug; de bestanden staan daarna in `settings.output_dir`
+(`<projectmap>\uitvoer`).
 
 ### Schematiseren (.prfl)
 
@@ -354,9 +398,9 @@ automatisch startpunt, geen vervanging van een beoordeling van het profiel.
 
 ## Uitvoer
 
-Alles komt in de outputmap `<cur_dir>\output_per_vak_<interval_length>m\` (bijv. `output\output_per_vak_10m`).
-Alle shapefiles staan in RD New. Elke stap overschrijft de bestanden van een vorige berekening met dezelfde
-instellingen.
+Alles komt in de uitvoermap van het project, `<projectmap>\uitvoer\` (bijv. `demo\uitvoer`). Alle shapefiles
+staan in RD New. Elke stap overschrijft de bestanden van een vorige berekening, ook als de instellingen
+(bijv. het interval) anders waren.
 
 | Bestand | Inhoud |
 |---|---|
@@ -397,7 +441,7 @@ Voorbeeld in Python:
 import fiona
 import numpy as np
 
-with fiona.open(r"output\output_per_vak_10m\cross_lines_ahn.shp") as src:
+with fiona.open(r"demo\uitvoer\cross_lines_ahn.shp") as src:
     for row in src:
         xyz = np.array(row.geometry.coordinates)
         afstand = np.hypot(*(xyz[:, :2] - xyz[0, :2]).T) - 200.0 / 2  # cross_length / 2
@@ -422,3 +466,11 @@ Nederlandse Excel; in pandas: `sep=";", decimal=","`):
 | `rmse` | [m] afwijking van het gekozen profiel t.o.v. het representatieve profiel |
 | `check` | uitkomst van de controle door `prflcheck`: `0` = goedgekeurd |
 | `omschrijving` | toelichting bij de controle, of de foutmelding als het vak niet geschematiseerd kon worden |
+
+## Licentie
+
+Copyright (c) 2026 HKV
+
+AHNProfielCreator valt onder de [European Union Public Licence v1.2](LICENSE) (EUPL-1.2). Meegeleverde
+software van derden houdt haar eigen licentie, zoals [Leaflet](src/ahnprofielcreator/app/static/vendor/leaflet/LICENSE)
+(BSD-2-Clause). Voor de licentie van de AHN-data zelf, zie [AHN-data](#ahn-data).

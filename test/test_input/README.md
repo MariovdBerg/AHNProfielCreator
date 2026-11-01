@@ -1,11 +1,11 @@
 # Teststukken uit de normtrajecten
 
 Geknipt uit `nbpw_dijktrajecten_formeel.shp` (normtrajecten primaire waterkeringen, RD New) en opgedeeld
-in dijkvakken. Elk geval staat in een eigen map, met dezelfde naam als de referentie-uitvoer in
+in dijkvakken. Bron: [Nationale Basisbestanden Primaire Waterkeringen](https://data.overheid.nl/dataset/48540-dataset-nationale-basisbestanden-primaire-waterkeringen) van Rijkswaterstaat ([Waterveiligheidsportaal](https://waterveiligheidsportaal.nl)), publiek domein. Elk geval staat in een eigen map, met dezelfde naam als de referentie-uitvoer in
 `test/test_output` (bijv. `ringen/ringen.shp`); de referentie van het demotraject (`test/test_output/demo`)
 gebruikt de demobestanden uit het pakket. Elke shapefile heeft de velden `vak_id`, `traject` (normtraject), `van_m` en `tot_m`
 (afstand langs het normtraject). Er is geen buitenlijn bij; gebruik `outside_offset` (bijv. 20 m, links).
-Gecontroleerd met de AHN5/AHN4-tiffs van P: (interval 10 m, dwarslijnen 100 m).
+Gecontroleerd met de AHN5/AHN4-tiffs (interval 10 m, dwarslijnen 100 m).
 
 | Bestand | Traject | Wat het test | Resultaat (10 m / 100 m) |
 |---|---|---|---|

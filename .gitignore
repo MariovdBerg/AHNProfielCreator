@@ -23,5 +23,5 @@ build/
 # Lokale en gedownloade AHN tiffs
 /ahn_data/
 
-# Output van berekeningen (cur_dir in config.example.ini)
-/output/
+# Uitvoer van projecten in de werkmap (o.a. het demotraject)
+/demo/uitvoer/

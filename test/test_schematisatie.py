@@ -156,7 +156,7 @@ def test_too_few_decimals_for_limits():
 def test_ruwheid_limits_from_prflcheck(monkeypatch):
     monkeypatch.setattr(prflcheck.checks, "RUWHEIDLAAG", 0.7)
     with pytest.raises(ValueError, match="schem_ruwheid"):
-        ppv.Settings(cur_dir="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_ruwheid=0.6)
+        ppv.Settings(projectmap="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_ruwheid=0.6)
 
 
 def test_fit_settings_are_used(tmp_path):
@@ -169,7 +169,7 @@ def test_fit_settings_are_used(tmp_path):
     gekozen, modellen = schem_cross.fit_profiel(x, z, 2.0, kz[-1], schem_cross.FitInstellingen(voorland_delen=2))
     assert modellen[0]["soorten"] == "vvtk"
     settings = ppv.Settings(
-        cur_dir="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_stap=1, schem_decimalen=2,
+        projectmap="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_stap=1, schem_decimalen=2,
         schem_min_taludbreedte=3, schem_voorland_fit=20, schem_voorland_delen=2,
     )
     inst = schematisatie.fit_instellingen(settings)
@@ -226,7 +226,7 @@ def dike_settings(tmp_path, dike_tif, monkeypatch):
     monkeypatch.setattr(ppv.ahn, "AHNTiles", lambda folder, **kwargs: FakeTiles(dike_tif, (0, 0, 100, 100)))
     dijk = write_lines(tmp_path / "dijk.shp", [(shapely.geometry.LineString([(10, 50), (90, 50)]), {"vak_id": "A"})])
     return ppv.Settings(
-        cur_dir=str(tmp_path / "uit"),
+        projectmap=str(tmp_path / "uit"),
         input_line=dijk,
         ahn_file_loc=str(tmp_path),
         outside_offset=5,
@@ -285,14 +285,14 @@ def test_schematise_removes_previous_files(dike_settings):
 
 
 def test_schematise_needs_outside_line(tmp_path):
-    settings = ppv.Settings(cur_dir=str(tmp_path), input_line="dijk.shp", ahn_file_loc=str(tmp_path))
+    settings = ppv.Settings(projectmap=str(tmp_path), input_line="dijk.shp", ahn_file_loc=str(tmp_path))
     with pytest.raises(ValueError, match="buitenzijde"):
         ppv.schematise(settings)
 
 
 def test_schematise_needs_profiles(tmp_path):
     settings = ppv.Settings(
-        cur_dir=str(tmp_path), input_line="dijk.shp", input_line_outside="buiten.shp", ahn_file_loc=str(tmp_path)
+        projectmap=str(tmp_path), input_line="dijk.shp", input_line_outside="buiten.shp", ahn_file_loc=str(tmp_path)
     )
     with pytest.raises(FileNotFoundError, match="start eerst de berekening"):
         ppv.schematise(settings)
@@ -301,7 +301,7 @@ def test_schematise_needs_profiles(tmp_path):
 def test_main_schematiseren(dike_settings, tmp_path):
     ppv.main(
         [
-            "--cur-dir", dike_settings.cur_dir, "--input-line", dike_settings.input_line,
+            "--projectmap", dike_settings.projectmap, "--input-line", dike_settings.input_line,
             "--ahn-file-loc", str(tmp_path), "--outside-offset", "5", "--outside-side", "rechts",
             "--cross-length", "60", "--schematiseren", "--schem-kwantiel", "0.5", "--schem-voorland", "nee",
         ]
@@ -317,7 +317,7 @@ def test_works_without_prflcheck(monkeypatch):
     """Zonder prflcheck werkt alles behalve het schematiseren, met een duidelijke melding."""
     for name in ("prflcheck", "prflcheck.checks"):
         monkeypatch.setitem(__import__("sys").modules, name, None)  # import faalt
-    settings = ppv.Settings(cur_dir="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_ruwheid=0.3)
+    settings = ppv.Settings(projectmap="uit", input_line="dijk.shp", ahn_file_loc="ahn", schem_ruwheid=0.3)
     assert settings.schem_ruwheid == 0.3  # Zonder prflcheck geen grenzen voor de ruwheid
     with pytest.raises(ImportError, match="pip install"):
         schem_cross.hydra_grenzen(schem_cross.FitInstellingen())

@@ -17,9 +17,10 @@ from ahnprofielcreator.app import server as app_server
 @pytest.fixture
 def app(tmp_path):
     dijk = write_lines(tmp_path / "dijk.shp", [(shapely.geometry.LineString([(150000, 450000), (150100, 450000)]), {"vak_id": "A"})])
-    config = {"cur_dir": str(tmp_path / "uit"), "input_line": dijk, "ahn_file_loc": str(tmp_path / "ahn")}
+    (tmp_path / "uit").mkdir()
+    config = {"input_line": dijk, "ahn_file_loc": str(tmp_path / "ahn")}
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), app_server.Handler)
-    httpd.state = app_server.State(config)
+    httpd.state = app_server.State(tmp_path, "uit", config)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield httpd
@@ -56,10 +57,22 @@ def test_settings_and_layers(app):
     assert 4 < lon < 7 and 51 < lat < 53  # Omgerekend naar WGS84
 
 
-def test_schem_needs_profiles(app):
+def test_schem_needs_profiles(app, monkeypatch):
+    monkeypatch.setattr(app_server.ppv.schematisatie, "import_prflcheck", lambda: None)  # Ook zonder prflcheck
     status, data = request(app, "POST", "/api/schem", {})
     assert status == 400
     assert "start eerst de berekening" in data["error"]
+    assert app.state.run["state"] == "idle"
+
+
+def test_schem_needs_prflcheck(app, monkeypatch):
+    def missing():
+        raise ImportError("prflcheck ontbreekt")
+
+    monkeypatch.setattr(app_server.ppv.schematisatie, "import_prflcheck", missing)
+    status, data = request(app, "POST", "/api/schem", {})
+    assert status == 400
+    assert "prflcheck ontbreekt" in data["error"]
     assert app.state.run["state"] == "idle"
 
 
@@ -184,14 +197,69 @@ def test_outside_line_step(app):
 
 
 def test_save_settings(app, tmp_path):
-    path = str(tmp_path / "nieuw.ini")
-    status, data = request(app, "POST", "/api/save", {"path": path})
+    path = str(tmp_path / "uit" / "config.ini")
+    before = dict(app.state.settings)
+    status, data = request(app, "POST", "/api/save", {})
     assert status == 200 and data["path"] == path
-    assert app_server.ppv.load_config(path) == app.state.settings
+    saved = app_server.ppv.load_config(path)
+    assert "projectmap" not in saved  # Volgt uit de map
+    assert {k: saved[k] for k in before} == before
+    assert saved["interval_length"] == 10 and saved["model"] == "DTM"  # Ook de standaardwaarden
+    assert app.state.settings == saved  # Het formulier toont wat in het bestand staat
     assert request(app, "GET", "/api/settings")[1]["config_path"] == path
+    assert request(app, "POST", "/api/save", {})[0] == 200  # Overschrijft het eigen config.ini
 
-    status, data = request(app, "POST", "/api/save", {"path": path})
-    assert status == 409 and "bestaat al" in data["error"]
-    assert request(app, "POST", "/api/save", {"path": path, "overwrite": True})[0] == 200
-    assert request(app, "POST", "/api/save", {"path": str(tmp_path / "nieuw.txt")})[0] == 400
-    assert request(app, "POST", "/api/save", {"path": str(tmp_path / "geen" / "x.ini")})[0] == 400
+
+def test_projects(app, tmp_path):
+    info = request(app, "GET", "/api/settings")[1]
+    assert info["werkmap"] == str(tmp_path) and info["project"] == "uit"
+    assert info["projects"] == []  # 'uit' heeft (nog) geen invoer of config.ini
+    assert "projectmap" not in [f["name"] for f in info["fields"]]
+    assert info["files"]["punten"]["path"] == str(tmp_path / "uit" / "uitvoer" / "cross_points.shp")
+
+    status, info = request(app, "POST", "/api/project", {"name": "nieuw", "new": True})
+    assert status == 200 and info["project"] == "nieuw" and info["projects"] == ["nieuw"]
+    assert (tmp_path / "nieuw" / "invoer").is_dir() and (tmp_path / "nieuw" / "uitvoer").is_dir()
+    # Meteen een volledig config.ini, met de standaardwaarden; de verplichte paden nog leeg.
+    config = (tmp_path / "nieuw" / "config.ini").read_text(encoding="utf-8")
+    assert "\ninput_line =\n" in config and "\nschem_decimalen = 3\n" in config
+    assert app.state.settings["cross_length"] == 200 and "input_line" not in app.state.settings
+    assert request(app, "POST", "/api/project", {"name": "nieuw", "new": True})[0] == 409
+
+    # Relatieve invoerpaden gelden t.o.v. de invoer van het project.
+    request(app, "POST", "/api/settings", {"input_line": "dijk.shp", "ahn_file_loc": "."})
+    info = request(app, "GET", "/api/settings")[1]
+    assert info["files"]["vakken"]["path"] == str(tmp_path / "nieuw" / "invoer" / "dijk.shp")
+    request(app, "POST", "/api/save", {})
+
+    assert request(app, "POST", "/api/project", {"name": "uit"})[0] == 200
+    assert app.state.projectmap == str(tmp_path / "uit") and app.state.settings == {}  # Geen config.ini
+    assert request(app, "POST", "/api/project", {"name": "nieuw"})[0] == 200
+    assert app.state.settings["input_line"] == "dijk.shp" and app.state.settings["ahn_file_loc"] == "."  # Uit nieuw/config.ini
+    assert request(app, "POST", "/api/project", {"name": "bestaat_niet"})[0] == 400
+
+
+@pytest.mark.parametrize("name", ["", "..", "a/b", "..\\uit", "c:"])
+def test_project_name_refused(app, name):
+    status, data = request(app, "POST", "/api/project", {"name": name, "new": True})
+    assert status == 400 and "projectnaam" in data["error"]
+    status, data = request(app, "POST", "/api/project", {"name": name})
+    assert status == 400
+
+
+def test_without_project(tmp_path):
+    state = app_server.State(tmp_path)
+    info = state.settings_info()
+    assert info["project"] is None and info["files"]["punten"]["path"] is None
+    with pytest.raises(ValueError, match="project"):
+        state.start_run("punten")
+
+
+def test_main_opens_demo_by_default(monkeypatch):
+    """Zonder argumenten in de ontwikkelmap: werkmap is de huidige map, project demo."""
+    opened = {}
+    monkeypatch.chdir(app_server.DEMO_DIR.parent)
+    monkeypatch.setattr(app_server.http.server.ThreadingHTTPServer, "serve_forever", lambda self: opened.update(state=self.state))
+    assert app_server.main(["--no-browser", "--port", "0"]) == 0
+    assert opened["state"].projectmap == str(app_server.DEMO_DIR)
+    assert opened["state"].settings_info()["demo"]

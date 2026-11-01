@@ -19,7 +19,7 @@ import dataclasses
 
 import numpy as np
 
-PRFLCHECK_URL = "https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip"
+PRFLCHECK_URL = "https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/tags/v2.0.0.zip"
 # Marge op de grenzen van prflcheck, zodat een profiel na afronden niet net over een grens valt: een relatief deel
 # van de grens, plus de grootste afwijking in de helling door afronden van z op `decimalen` over de kortste breedte.
 MARGE_REL = 0.002
@@ -33,7 +33,7 @@ def laad_prflcheck():
     except ImportError:
         raise ImportError(
             "Voor het schematiseren is het pakket prflcheck (ProfielCheckPython) nodig. Installeer het in de "
-            f"omgeving met: pip install {PRFLCHECK_URL}"
+            f"omgeving met: python -m pip install {PRFLCHECK_URL}"
         ) from None
     return prflcheck
 
