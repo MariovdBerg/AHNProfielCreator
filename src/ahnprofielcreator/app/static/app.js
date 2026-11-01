@@ -62,6 +62,15 @@ const FILE_LABELS = {
   schematisatie: "Schematisatie (.prfl)",
 };
 
+const TASK_LABELS = {
+  buitenlijn: "Buitenlijn genereren",
+  punten: "Intervalpunten genereren",
+  dwarslijnen: "Dwarslijnen genereren",
+  profielen: "AHN-profielen genereren",
+  berekening: "Berekening",
+  schematisatie: "Schematiseren",
+};
+
 const $ = (id) => document.getElementById(id);
 
 async function api(url, body) {
@@ -329,12 +338,36 @@ function renderFiles(files) {
   updateButtons();
 }
 
-// Schematiseren kan pas als er AHN-profielen zijn; niets starten tijdens een berekening.
+// Een stap kan pas als de uitvoer van de vorige stap er is; niets starten tijdens een berekening.
 function updateButtons() {
-  const profiles = state.settings && state.settings.files.profielen.exists;
+  const files = state.settings ? state.settings.files : {};
+  const exists = (key) => Boolean(files[key] && files[key].exists);
+  const value = (name) => state.settings?.fields.find((field) => field.name === name)?.value;
+  const outsideGiven = Boolean(value("input_line_outside"));
+  const offset = Number(value("outside_offset")) > 0;
   $("btn-run").disabled = state.running;
-  $("btn-apply").disabled = state.running;
-  $("btn-schem").disabled = state.running || !profiles;
+  $("btn-validate").disabled = state.running;
+  $("btn-outside").disabled = state.running || outsideGiven || !offset;
+  $("btn-outside").title = outsideGiven
+    ? "Er is een buitenlijn (.shp) opgegeven; die wordt gebruikt"
+    : offset
+      ? "Leid de buitenlijn af uit de dijkvakken, om op de kaart te controleren"
+      : "Vul eerst een afstand in voor de afgeleide buitenlijn (en valideer)";
+  $("btn-points").disabled = state.running;
+  $("btn-cross").disabled = state.running || !exists("punten");
+  $("btn-cross").title = "Stap 2: dwarslijnen door de intervalpunten" + (exists("punten") ? "" : " (genereer eerst de intervalpunten)");
+  $("btn-profiles").disabled = state.running || !exists("dwarslijnen");
+  $("btn-profiles").title = "Stap 3: AHN-hoogtes langs de dwarslijnen" + (exists("dwarslijnen") ? "" : " (genereer eerst de dwarslijnen)");
+  $("btn-schem").disabled = state.running || !exists("profielen");
+}
+
+// Korte melding in het statusvak (zonder log), bijv. na valideren of opslaan.
+function showStatus(kind, text) {
+  const status = $("run-status");
+  status.hidden = false;
+  status.className = `status ${kind}`;
+  status.textContent = text;
+  $("run-log").hidden = true;
 }
 
 function formValues() {
@@ -343,9 +376,25 @@ function formValues() {
   return values;
 }
 
-async function applySettings() {
+async function validateSettings() {
   renderSettings(await api("/api/settings", formValues()));
   await loadLayers();
+}
+
+// Valideer en sla op; vraagt om het pad (voorstel: het INI-bestand waarmee de app gestart is).
+async function saveSettings() {
+  await validateSettings();
+  const path = window.prompt("Instellingen opslaan in (.ini):", state.settings.config_path || "config.ini");
+  if (!path) return;
+  let result;
+  try {
+    result = await api("/api/save", { path });
+  } catch (e) {
+    if (!e.message.endsWith("bestaat al.") || !window.confirm(`${e.message} Overschrijven?`)) throw e;
+    result = await api("/api/save", { path, overwrite: true });
+  }
+  state.settings.config_path = result.path;
+  showStatus("done", `Instellingen opgeslagen in '${result.path}'.`);
 }
 
 async function loadLayers() {
@@ -373,7 +422,7 @@ async function loadLayers() {
 function setRunStatus(run) {
   const status = $("run-status");
   const log = $("run-log");
-  const what = run.task === "schematisatie" ? "Schematiseren" : "Berekening";
+  const what = TASK_LABELS[run.task] || "Berekening";
   const labels = { running: `${what} loopt…`, done: `${what} klaar.`, error: run.message };
   status.hidden = run.state === "idle";
   status.className = `status ${run.state}`;
@@ -385,11 +434,11 @@ function setRunStatus(run) {
   updateButtons();
 }
 
-// Berekening (/api/run) of schematisatie (/api/schem) starten, met de instellingen uit het formulier.
-async function startRun(url = "/api/run") {
+// Berekening, een losse stap of de schematisatie starten (zie TASK_LABELS), met de instellingen uit het formulier.
+async function startRun(task = "berekening") {
   try {
     renderSettings(await api("/api/settings", formValues()));
-    setRunStatus(await api(url, {}));
+    setRunStatus(await api("/api/run", { task }));
   } catch (e) {
     setRunStatus({ state: "error", message: e.message, log: [] });
     return;
@@ -630,13 +679,24 @@ function drawChart() {
 $("settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    await applySettings();
+    await validateSettings();
+    showStatus("done", "Instellingen gecontroleerd.");
   } catch (e) {
     setRunStatus({ state: "error", message: e.message, log: [] });
   }
 });
-$("btn-run").addEventListener("click", () => startRun("/api/run"));
-$("btn-schem").addEventListener("click", () => startRun("/api/schem"));
+$("btn-save").addEventListener("click", async () => {
+  try {
+    await saveSettings();
+  } catch (e) {
+    setRunStatus({ state: "error", message: e.message, log: [] });
+  }
+});
+for (const button of document.querySelectorAll("button.step")) {
+  button.addEventListener("click", () => startRun(button.dataset.task));
+}
+$("btn-run").addEventListener("click", () => startRun("berekening"));
+$("btn-schem").addEventListener("click", () => startRun("schematisatie"));
 $("show-schem").addEventListener("change", drawChart);
 $("btn-prev").addEventListener("click", () => step(-1));
 $("btn-next").addEventListener("click", () => step(1));

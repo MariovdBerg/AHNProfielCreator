@@ -36,10 +36,17 @@
           <div id="fields-schematisatie"></div>
         </details>
         <div class="buttons">
-          <button type="submit" id="btn-apply">Toepassen</button>
-          <button type="button" id="btn-run" class="primary">Berekening starten</button>
+          <button type="submit" id="btn-validate" title="Controleer de instellingen en toon de bestanden die erbij horen">Valideren</button>
+          <button type="button" id="btn-save" title="Valideer en sla de instellingen op in een .ini-bestand">Opslaan naar .ini</button>
         </div>
         <div class="buttons">
+          <button type="button" class="step" data-task="buitenlijn" id="btn-outside" disabled>Genereer buitenlijn</button>
+          <button type="button" class="step" data-task="punten" id="btn-points" title="Stap 1: intervalpunten langs de dijkvakken">Genereer intervalpunten</button>
+          <button type="button" class="step" data-task="dwarslijnen" id="btn-cross" disabled>Genereer dwarslijnen</button>
+          <button type="button" class="step" data-task="profielen" id="btn-profiles" disabled>Genereer AHN-profielen</button>
+        </div>
+        <div class="buttons">
+          <button type="button" id="btn-run" class="primary" title="Alle stappen: (afgeleide) buitenlijn, intervalpunten, dwarslijnen en AHN-profielen">Berekening starten</button>
           <button type="button" id="btn-schem" title="Optioneel, na de berekening: één Hydra-NL profiel (.prfl) per vak" disabled>Schematiseren (.prfl)</button>
         </div>
       </form>

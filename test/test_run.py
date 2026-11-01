@@ -93,3 +93,26 @@ def test_main_with_config(tmp_path, dijk_noord, fake_tiles):
         rows = list(source)
     assert len(rows) == 4
     assert len(rows[0].geometry.coordinates) == 11  # 20 m in stappen van 2 m
+
+
+def test_steps_separately(tmp_path, dijk_noord, fake_tiles):
+    s = settings(tmp_path, dijk_noord, outside_offset=5)
+    with pytest.raises(FileNotFoundError, match="intervalpunten"):
+        ppv.make_cross_lines(s)
+    ppv.make_points(s)
+    assert len(read_rows(s.output_points)) == 4
+    with pytest.raises(FileNotFoundError, match="dwarslijnen"):
+        ppv.make_profiles(s)
+    ppv.make_cross_lines(s)  # Maakt ook de afgeleide buitenlijn
+    assert len(read_rows(s.outside_line)) == 1 and len(read_rows(s.output_cross)) == 4
+    heights = ppv.make_profiles(s)
+    assert len(heights["A"]) == 4 and len(read_rows(s.output_cross_ahn)) == 4
+
+
+def test_write_config_roundtrip(tmp_path):
+    config = {"cur_dir": "uit", "input_line": r"P:\data dijk\vakken.shp", "ahn_file_loc": "ahn", "interval_length": 25.0}
+    path = tmp_path / "nieuw.ini"
+    ppv.write_config(path, config)
+    assert ppv.load_config(path) == config
+    with pytest.raises(ValueError, match="cur_dir"):
+        ppv.write_config(path, {"cur_dir": "uit ; commentaar"})

@@ -1,17 +1,16 @@
 # AHNProfielCreator
 
-Genereert AHN profielen langs een traject, per dijkvak. Dit is de package-versie van
-`profielen_per_vak.ipynb`:
+Genereert AHN-profielen langs een traject, per dijkvak. Optioneel kan per dijkvak een .prfl-bestand gegenereerd worden
+op basis van de AHN-profielen. De app werkt als volgt:
 
-1. interval punten langs de dijkvaklijnen (`cross_points.shp`);
-2. dwarslijnen door die punten, georiënteerd met de buitenlijn (`cross_lines.shp`);
-3. AHN hoogtes langs de dwarslijnen (`cross_lines_ahn.shp`, 3D LineString);
-4. optioneel: per vak één geschematiseerd Hydra-NL profiel (`prfl/<vak>.prfl`), zie [Schematiseren](#schematiseren-prfl).
+0. lever één shapefile bestand aan van een traject, opgedeeld in dijkvakken (`*.shp`);
+1. genereer een buitenlijn van het traject om de orientatie te bepalen (`*_buitenlijn.shp`);
+2. genereer interval punten (elke `x` meter) langs de dijkvaklijnen (`cross_points.shp`);
+3. genereer dwarslijnen door die punten, georiënteerd met de buitenlijn (`cross_lines.shp`);
+4. genereer AHN-profielen langs de dwarslijnen (`cross_lines_ahn.shp`, 3D LineString);
+5. optioneel: schematiseer per dijkvak één `.prfl` profiel (`prfl/<vak>.prfl`), zie [Schematiseren](#schematiseren-prfl).
 
 De output komt in `<cur_dir>/output_per_vak_<interval_length>m/`.
-
-`hkvpy.profielen` is opgenomen als `ahnprofielcreator.profielen` (alleen de onderdelen die de app
-gebruikt); hkvpy hoeft dus niet geïnstalleerd te zijn.
 
 ## Installatie
 
@@ -29,7 +28,7 @@ niet op PyPI) dan los, in de geactiveerde omgeving. Zonder `prflcheck` werkt all
 pip install https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip
 ```
 
-Voor de webapp is dat genoeg. Voor het commando `ahn-profielen` of gebruik vanuit eigen scripts
+Voor de webapp is dit genoeg. Voor het commando `ahn-profielen` of gebruik vanuit eigen scripts
 daarna nog, in die omgeving:
 
 ```bash
@@ -47,9 +46,7 @@ de conda-omgeving (bijv. in VS Code via *Python: Select Interpreter*), zodat die
 
 Kopieer `config.example.ini` naar `config.ini` en pas de paden aan. Alle instellingen staan in de
 sectie `[profielen]`; paden schrijf je zonder aanhalingstekens en een lege waarde betekent de
-standaardwaarde. Commentaar begint met `;`. De instellingen `ahn_file_prefix`, `ahn_file_suffix` en
-`ahn_file_transform` bestaan niet meer; staan ze nog in een oud `config.ini`, dan worden ze met een
-waarschuwing genegeerd.
+standaardwaarde. Commentaar begint met `;`.
 
 ## Gebruik
 
@@ -68,12 +65,13 @@ weggeschreven als `buitenlijn_offset.shp` in de outputmap. Let op:
 - De afstand moet kleiner zijn dan de halve `cross_length`, anders snijden de dwarslijnen de lijn niet.
 - Links/rechts is ten opzichte van de richting waarin elk dijkvak getekend is. Zijn de vakken niet
   allemaal in dezelfde richting getekend, dan ligt de afgeleide buitenlijn bij sommige vakken aan de
-  verkeerde kant. Controleer dat op de kaart in de webapp (de lijn verschijnt na *Toepassen*).
+  verkeerde kant. Controleer dat op de kaart in de webapp (knop *Genereer buitenlijn*).
 
 ### Benodigde AHN-data
 
-De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app
-zelf; je hoeft alleen een map op te geven (`ahn_file_loc`, en eventueel `ahn_file_downloaded`).
+Om de AHN-profielen te genereren, wordt gebruik gemaakt van AHN. 
+De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen (`ahn_file_loc`).
+Ontbrekende kaartbladen downloadt de app zelf (`ahn_file_downloaded`).
 
 1. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`): de bladwijzer
    van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
@@ -260,8 +258,15 @@ Andere poort: `--port`. Na `pip install -e .` werkt ook `ahn-profielen-app --con
 - **Profiel:** klik op een dwarslijn voor het hoogteprofiel, met de andere profielen uit het vak in
   grijs. Bladeren met ◀ ▶ of de pijltjestoetsen. De x-as is de afstand tot de dijklijn; met een
   buitenlijn staat de buitenzijde links.
-- **Instellingen:** aanpassen en *Toepassen* toont de bestanden bij die instellingen;
-  *Berekening starten* voert alle stappen uit en laadt daarna het resultaat.
+- **Instellingen:** aanpassen en *Valideren* controleert ze en toont de bestanden bij die instellingen
+  (de instellingen gelden dan voor de app, maar staan nog niet in een bestand). *Opslaan naar .ini*
+  valideert en slaat ze op in een (nieuw) `.ini`-bestand, te gebruiken met `--config` of `start_app.bat`.
+  Commentaar in een bestaand bestand dat je overschrijft gaat verloren.
+- **Stappen:** *Berekening starten* voert alle stappen uit (behalve het schematiseren) en laadt daarna het
+  resultaat. Elke stap kan ook los: *Genereer buitenlijn* (alleen zonder opgegeven buitenlijn en met een
+  afstand), *Genereer intervalpunten*, *Genereer dwarslijnen* en *Genereer AHN-profielen*. Een stap
+  gebruikt de uitvoer van de vorige; de knop is pas actief als die er is. Pas je bijv. de lengte van de
+  dwarslijnen aan, genereer dan ook de stappen daarna opnieuw.
 - **Schematiseren (.prfl):** na de berekening; daarna toont de profielgrafiek per vak ook het representatieve
   profiel (gestippeld), het Hydra-NL profiel (oranje) en het voorland (groen), met het aantal bermen en de uitkomst van de controle. Is de
   berekening daarna opnieuw gedaan, dan staat de schematisatie als *verouderd* bij de bestanden.

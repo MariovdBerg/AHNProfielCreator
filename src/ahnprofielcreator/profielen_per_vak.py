@@ -260,12 +260,9 @@ def get_logger():
     return logger
 
 
-def run(settings):
-    """Voer alle stappen uit het notebook uit en geef de AHN-dwarslijnen per groep terug."""
-    logger = get_logger()
-
-    # Eerst de kaartbladindex lezen, zodat fouten in de AHN-instellingen meteen opvallen.
-    tiles = ahn.AHNTiles(
+def ahn_tiles(settings, logger=None):
+    """Kaartbladindex en lokale AHN-bladen volgens de instellingen."""
+    return ahn.AHNTiles(
         settings.ahn_file_loc,
         download_folder=settings.ahn_file_downloaded,
         index=settings.ahn_index,
@@ -273,13 +270,32 @@ def run(settings):
         version=settings.ahn_versie,
         model=settings.model,
         resolution=settings.model_resolutie,
-        logger=logger,
+        logger=logger or get_logger(),
     )
-    check_input_crs(settings)
-    os.makedirs(settings.output_dir, exist_ok=True)
-    make_outside_line(settings, logger)
 
-    # Initialize class voor intervalpunten en bijbehorende dwarslijnen.
+
+def require_file(path, step):
+    """Een stap leest de uitvoer van de vorige stap; meld duidelijk als die er nog niet is."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"'{path}' bestaat nog niet; {step}.")
+
+
+def make_points(settings, logger=None):
+    """Stap 1: intervalpunten langs de dijkvakken."""
+    logger = logger or get_logger()
+    check_crs(settings.input_line, "Dijkvakken")
+    os.makedirs(settings.output_dir, exist_ok=True)
+    cs = CrossSections(settings.input_line, settings.output_points, group_id=settings.group_id, logger=logger)
+    logger.info(f"Stap 1/3: intervalpunten om de {settings.interval_length:g} m...")
+    cs.interval_points_to_file(interval=settings.interval_length)
+
+
+def make_cross_lines(settings, logger=None):
+    """Stap 2: dwarslijnen door de intervalpunten, georiënteerd met de (eventueel afgeleide) buitenlijn."""
+    logger = logger or get_logger()
+    require_file(settings.output_points, "genereer eerst de intervalpunten")
+    check_input_crs(settings)
+    make_outside_line(settings, logger)
     cs = CrossSections(
         settings.input_line,
         settings.output_points,
@@ -287,16 +303,15 @@ def run(settings):
         outside_line_file=settings.outside_line,
         logger=logger,
     )
-
-    # Maak interval punten.
-    logger.info(f"Stap 1/3: intervalpunten om de {settings.interval_length:g} m...")
-    cs.interval_points_to_file(interval=settings.interval_length)
-
-    # Maak dwarslijnen.
     logger.info(f"Stap 2/3: dwarslijnen van {settings.cross_length:g} m...")
     cs.crosssections_to_file(settings.output_cross, length_crosssection=settings.cross_length)
 
-    # Initialize class.
+
+def make_profiles(settings, logger=None, tiles=None):
+    """Stap 3: AHN-hoogtes langs de dwarslijnen; geeft de AHN-dwarslijnen per groep terug."""
+    logger = logger or get_logger()
+    tiles = tiles or ahn_tiles(settings, logger)
+    require_file(settings.output_cross, "genereer eerst de dwarslijnen")
     ch = CrossSectionHeights(
         settings.output_cross,
         group_id=settings.group_id,
@@ -304,10 +319,21 @@ def run(settings):
         ahn_stepsize=settings.ahn_stepsize,
         logger=logger,
     )
-
-    # AHN hoogtes voor dwarslijnen.
     logger.info(f"Stap 3/3: AHN{tiles.version} {tiles.product} hoogtes om de {settings.ahn_stepsize:g} m...")
-    heights = ch.crosssections_height_to_file(settings.output_cross_ahn)
+    return ch.crosssections_height_to_file(settings.output_cross_ahn)
+
+
+def run(settings):
+    """Voer alle stappen uit het notebook uit en geef de AHN-dwarslijnen per groep terug."""
+    logger = get_logger()
+
+    # Eerst de kaartbladindex lezen en de invoer controleren, zodat fouten meteen opvallen.
+    tiles = ahn_tiles(settings, logger)
+    check_input_crs(settings)
+
+    make_points(settings, logger)
+    make_cross_lines(settings, logger)
+    heights = make_profiles(settings, logger, tiles=tiles)
     logger.info(f"Klaar, output in '{settings.output_dir}'.")
     return heights
 
@@ -355,6 +381,31 @@ def load_config(path):
         config[key] = value
 
     return config
+
+
+def write_config(path, config):
+    """
+    Schrijf instellingen naar sectie [profielen] van een INI-bestand, leesbaar met `load_config`.
+
+    Alleen de opgegeven waarden, in de volgorde van `Settings`; de rest blijft de standaardwaarde.
+    """
+    lines = [
+        "; Instellingen voor ahn-profielen en de webapp (opgeslagen vanuit de webapp).",
+        "; Gebruik: ahn-profielen --config <dit bestand>. Ontbrekende waarden: standaardwaarde.",
+        "",
+        f"[{CONFIG_SECTION}]",
+    ]
+    for field in dataclasses.fields(Settings):
+        value = config.get(field.name)
+        if value is None or value == "":
+            continue
+        value = str(value)
+        # Dit zou `load_config` als (begin van) commentaar of als volgende regel lezen.
+        if "\n" in value or "\r" in value or any(c in value for c in (" ;", " #", "\t;", "\t#")):
+            raise ValueError(f"'{field.name}' bevat een regeleinde of ' ;'/' #' en kan niet in een INI-bestand")
+        lines.append(f"{field.name} = {value}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def parse_args(argv=None):

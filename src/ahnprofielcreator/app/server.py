@@ -120,9 +120,10 @@ class ListHandler(logging.Handler):
 
 
 class State:
-    def __init__(self, config, demo=False):
+    def __init__(self, config, demo=False, config_path=None):
         self.lock = threading.Lock()
         self.settings = clean_settings(config)
+        self.config_path = config_path  # INI-bestand van de instellingen (voorstel bij opslaan)
         # Instellingen van het demotraject, zolang de gebruiker die niet aanpast (voor de melding in de app).
         self.demo_settings = dict(self.settings) if demo else None
         self.cache = {}
@@ -177,22 +178,26 @@ class State:
         paths = self.paths()
         files = {k: {"path": p, "exists": bool(p) and os.path.isfile(p)} for k, p in paths.items()}
         demo = DEMO_NAME if self.demo_settings is not None and self.settings == self.demo_settings else None
-        return {"fields": fields, "files": files, "demo": demo, "schem_stale": self.schem_stale()}
+        return {
+            "fields": fields,
+            "files": files,
+            "demo": demo,
+            "schem_stale": self.schem_stale(),
+            "config_path": self.config_path,
+        }
 
-    def make_outside_line(self, force=False):
-        """
-        Leid de buitenlijn af (zonder AHN-berekening), zodat die direct op de kaart te controleren is.
-
-        Zonder `force` alleen als het bestand nog ontbreekt.
-        """
-        if self.value("input_line_outside") or not self.value("outside_offset"):
-            return
-        if not self.value("cur_dir") or not self.value("input_line") or not os.path.isfile(self.value("input_line")):
-            return
-        if not force and os.path.isfile(self.paths()["buitenlijn"]):
-            return
-        settings = {"ahn_file_loc": "", **self.settings}
-        ppv.make_outside_line(ppv.Settings(**settings))
+    def save_config(self, path, overwrite=False):
+        """Sla de instellingen op in een INI-bestand; een bestaand bestand alleen met `overwrite`."""
+        if not path.lower().endswith(".ini"):
+            raise ValueError("Geef een pad naar een .ini-bestand op.")
+        path = os.path.abspath(path)
+        if not os.path.isdir(os.path.dirname(path)):
+            raise FileNotFoundError(f"Map '{os.path.dirname(path)}' bestaat niet.")
+        if os.path.exists(path) and not overwrite:
+            raise FileExistsError(f"'{path}' bestaat al.")
+        ppv.write_config(path, self.settings)
+        self.config_path = path
+        return {"path": path}
 
     # ---------- Shapefiles lezen ----------
 
@@ -240,11 +245,6 @@ class State:
         }
 
     def layers(self):
-        try:
-            if self.run["state"] != "running":  # Tijdens een berekening maakt die de buitenlijn zelf
-                self.make_outside_line()
-        except ValueError:
-            pass  # Foute instelling: de melding komt bij Toepassen of de berekening, de kaart laadt wel.
         paths = self.paths()
         group = self.value("group_id")
         layers = {}
@@ -335,18 +335,39 @@ class State:
 
     # ---------- Berekening draaien ----------
 
-    TASKS = {"berekening": ppv.run, "schematisatie": ppv.schematise}
+    # De berekening is alle stappen behalve de schematisatie; elke stap kan ook los.
+    TASKS = {
+        "buitenlijn": ppv.make_outside_line,
+        "punten": ppv.make_points,
+        "dwarslijnen": ppv.make_cross_lines,
+        "profielen": ppv.make_profiles,
+        "berekening": ppv.run,
+        "schematisatie": ppv.schematise,
+    }
+    NO_AHN = ("buitenlijn", "punten", "dwarslijnen")  # Stappen die de AHN-map niet nodig hebben
 
     def start_run(self, task="berekening"):
-        """Start de berekening of (daarna) de schematisatie in een aparte thread."""
+        """Start de berekening, een losse stap of (daarna) de schematisatie in een aparte thread."""
+        if task not in self.TASKS:
+            raise ValueError(f"Onbekende taak: {task}")
         with self.lock:
             if self.run["state"] == "running":
                 raise RuntimeError("Er loopt al een berekening.")
-            missing = [n for n, f in FIELDS.items() if f.default is dataclasses.MISSING and n not in self.settings]
+            settings = {"ahn_file_loc": "", **self.settings} if task in self.NO_AHN else self.settings
+            missing = [n for n, f in FIELDS.items() if f.default is dataclasses.MISSING and n not in settings]
             if missing:
                 raise ValueError(f"Ontbrekende instelling(en): {', '.join(missing)}")
-            settings = ppv.Settings(**self.settings)
-            if task == "schematisatie":
+            settings = ppv.Settings(**settings)
+            if task == "buitenlijn":
+                if settings.input_line_outside:
+                    raise ValueError("Er is al een buitenlijn opgegeven; maak dat veld leeg om er een af te leiden.")
+                if not settings.outside_offset:
+                    raise ValueError("Vul een afstand in om de buitenlijn af te leiden (outside_offset).")
+            elif task == "dwarslijnen":
+                ppv.require_file(settings.output_points, "genereer eerst de intervalpunten")
+            elif task == "profielen":
+                ppv.require_file(settings.output_cross, "genereer eerst de dwarslijnen")
+            elif task == "schematisatie":
                 ppv.schematisatie.import_prflcheck()
                 if not os.path.isfile(settings.output_cross_ahn):
                     raise FileNotFoundError("Er zijn nog geen AHN-profielen voor deze instellingen; start eerst de berekening.")
@@ -456,17 +477,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if self.state.run["state"] == "running":
                     raise RuntimeError("Er loopt een berekening; wacht tot die klaar is.")
                 self.state.settings = settings
-                self.state.make_outside_line(force=True)
             return self.state.settings_info()
 
-        def start(task):
-            parse_body()
-            self.state.start_run(task)
+        def save_settings():
+            body = parse_body()
+            path = str(body.get("path") or "").strip().strip('"').strip()
+            return self.state.save_config(path, overwrite=bool(body.get("overwrite")))
+
+        def start(task=None):
+            body = parse_body()
+            self.state.start_run(task or str(body.get("task") or "berekening"))
             return self.state.run_status()
 
         routes = {
             "/api/settings": update_settings,
-            "/api/run": lambda: start("berekening"),
+            "/api/save": save_settings,
+            "/api/run": start,
             "/api/schem": lambda: start("schematisatie"),
         }
         if url.path in routes:
@@ -477,6 +503,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _api(self, func):
         try:
             status, data = 200, func()
+        except FileExistsError as e:
+            status, data = 409, {"error": str(e)}
         except (FileNotFoundError, ImportError, ValueError, RuntimeError) as e:
             status, data = 400, {"error": str(e)}
         except Exception as e:
@@ -524,7 +552,7 @@ def main(argv=None):
 
     # Alleen lokaal bereikbaar: de app leest en schrijft bestanden op deze computer.
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.state = State(config, demo=demo)
+    server.state = State(config, demo=demo, config_path=None if demo else os.path.abspath(args.config))
 
     url = f"http://127.0.0.1:{args.port}/"
     if demo:
