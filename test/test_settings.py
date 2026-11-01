@@ -1,5 +1,6 @@
 """Instellingen: validatie, INI-bestand en commandline."""
 
+import importlib.util
 import os
 
 import pytest
@@ -8,6 +9,7 @@ from ahnprofielcreator import ahn
 from ahnprofielcreator.profielen_per_vak import Settings, load_config, main, outside_line, output_dir
 
 REQUIRED = {"projectmap": "uit", "input_line": "dijk.shp", "ahn_file_loc": "ahn"}
+HAS_PRFLCHECK = importlib.util.find_spec("prflcheck") is not None  # Grenzen van de ruwheid komen uit prflcheck
 
 
 def test_defaults_and_paths():
@@ -46,7 +48,8 @@ def test_normalisation():
         ("model", "DEM"),
         ("model_resolutie", 1),
         ("schem_kwantiel", 1.5),
-        ("schem_ruwheid", 0.3),
+        ("schem_ruwheid", 0),
+        pytest.param("schem_ruwheid", 0.3, marks=pytest.mark.skipif(not HAS_PRFLCHECK, reason="grenzen uit prflcheck")),
         ("schem_kruin_zoekafstand", 0),
         ("schem_voorland", "misschien"),
         ("schem_berm_winst_rel", 2),

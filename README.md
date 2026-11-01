@@ -58,7 +58,7 @@ een andere conda en (voor het schematiseren) internet bij het aanmaken van de om
    - **Commandline:** installeer het pakket en reken met de instellingen van de demo:
 
      ```bash
-     pip install -e .
+     python -m pip install -e .
      ```
 
      ```bash
@@ -80,7 +80,7 @@ Klaar: 6 van 6 vakken geschematiseerd (6 zonder fouten), output in '...\demo\uit
 In de uitvoermap staan dan de afgeleide buitenlijn, 300 intervalpunten, 300 dwarslijnen met AHN-hoogtes en per
 vak een `.prfl`-bestand; zie [Uitvoer](#uitvoer) voor wat er in elk bestand staat.
 
-Vanuit Python gaat het zo (na `pip install -e .`):
+Vanuit Python gaat het zo (na `python -m pip install -e .`):
 
 ```python
 from ahnprofielcreator import Settings, run, schematise
@@ -106,16 +106,19 @@ conda env create -f environment.yml
 
 Bestaat de omgeving al, installeer `prflcheck` ([ProfielCheckPython](https://github.com/MariovdBerg/ProfielCheckPython),
 niet op PyPI) dan los, in de geactiveerde omgeving. Zonder `prflcheck` werkt alles behalve het schematiseren.
+Gebruik `python -m pip`: een losse `pip` kan die van een andere Python zijn, en dan komt het pakket buiten de
+omgeving terecht (bijv. in `%APPDATA%\Python`). De versie ligt vast op v2.0.0, omdat de schematisatie de
+grenzen van de controle uit `prflcheck` gebruikt.
 
 ```bash
-pip install https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip
+python -m pip install https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/tags/v2.0.0.zip
 ```
 
 Voor de webapp via `start_app.bat` is dit genoeg. Voor het commando `ahn-profielen` of gebruik vanuit eigen
 scripts installeer je daarna nog het pakket, in die omgeving en vanuit de ontwikkelmap:
 
 ```bash
-pip install -e .
+python -m pip install -e .
 ```
 
 **Activeer de omgeving altijd** (`conda activate ahnprofielcreator`) voordat je Python, `ahn-profielen` of
@@ -310,7 +313,7 @@ python app.py --werkmap pad\naar\werkmap --project naam
 
 Zonder `--werkmap` is de huidige map de werkmap; zonder `--project` opent de app `demo` als dat er is.
 `--config <project>\config.ini` opent dat project met de map erboven als werkmap. Andere poort: `--port`.
-Na `pip install -e .` werkt ook `ahn-profielen-app`.
+Na `python -m pip install -e .` werkt ook `ahn-profielen-app`.
 
 Wat de app laat zien:
 
@@ -344,7 +347,7 @@ De app is alleen bereikbaar vanaf de eigen computer (127.0.0.1).
 
 ### Commandline
 
-Na `pip install -e .`, in een geactiveerde omgeving:
+Na `python -m pip install -e .`, in een geactiveerde omgeving:
 
 ```bash
 ahn-profielen --config pad\naar\project\config.ini

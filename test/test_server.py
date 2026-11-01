@@ -57,10 +57,22 @@ def test_settings_and_layers(app):
     assert 4 < lon < 7 and 51 < lat < 53  # Omgerekend naar WGS84
 
 
-def test_schem_needs_profiles(app):
+def test_schem_needs_profiles(app, monkeypatch):
+    monkeypatch.setattr(app_server.ppv.schematisatie, "import_prflcheck", lambda: None)  # Ook zonder prflcheck
     status, data = request(app, "POST", "/api/schem", {})
     assert status == 400
     assert "start eerst de berekening" in data["error"]
+    assert app.state.run["state"] == "idle"
+
+
+def test_schem_needs_prflcheck(app, monkeypatch):
+    def missing():
+        raise ImportError("prflcheck ontbreekt")
+
+    monkeypatch.setattr(app_server.ppv.schematisatie, "import_prflcheck", missing)
+    status, data = request(app, "POST", "/api/schem", {})
+    assert status == 400
+    assert "prflcheck ontbreekt" in data["error"]
     assert app.state.run["state"] == "idle"
 
 

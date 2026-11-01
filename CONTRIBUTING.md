@@ -1,7 +1,7 @@
 # Ontwikkelen en testen
 
 Voor wie aan de code werkt. Installeer eerst de omgeving en het pakket zoals in de [README](README.md#installatie),
-inclusief `pip install -e .`, en activeer de omgeving.
+inclusief `python -m pip install -e .`, en activeer de omgeving.
 
 ## Opbouw van de code
 

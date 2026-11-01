@@ -14,4 +14,4 @@ dependencies:
   - pip
   - pip:
       # Schematiseren tot .prfl (ProfielCheckPython, niet op PyPI); optioneel
-      - https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip
+      - https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/tags/v2.0.0.zip

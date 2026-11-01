@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # Schematiseren tot .prfl (ProfielCheckPython, niet op PyPI)
-schem = ["prflcheck @ https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/heads/main.zip"]
+schem = ["prflcheck @ https://github.com/MariovdBerg/ProfielCheckPython/archive/refs/tags/v2.0.0.zip"]
 test = ["pytest"]
 
 [project.scripts]
