@@ -73,28 +73,21 @@ Om de AHN-profielen te genereren, wordt gebruik gemaakt van AHN.
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen (`ahn_file_loc`).
 Ontbrekende kaartbladen downloadt de app zelf (`ahn_file_downloaded`).
 
-1. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`): de bladwijzer
-   van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
-   ([bron](https://basisdata.nl/hwh-ahn/AUX/bladwijzer.gpkg),
-   [kaart](https://basisdata.nl/hwh-ahn/AUX/bladwijzer/index.html)). De bladnaam staat in
-   attribuut `AHN` (`ahn_index_id`). Een eigen index (.gpkg of .shp, RD New) mag ook, als die
-   dezelfde velden heeft.
+1. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`): 
+   de bladwijzer van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
+   ([bron](https://basisdata.nl/hwh-ahn/AUX/bladwijzer.gpkg), [kaart](https://basisdata.nl/hwh-ahn/AUX/bladwijzer/index.html)). De bladnaam staat in attribuut `AHN` (`ahn_index_id`).
+   Een eigen index (.gpkg of .shp, RD New) mag ook, als die dezelfde velden heeft.
 2. **Map met AHN tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs.
 3. **Map voor downloads** (`ahn_file_downloaded`, optioneel): hier komen gedownloade bladen en hier
-   wordt ook gezocht. Leeg = `ahn_file_loc`. Handig als `ahn_file_loc` alleen-lezen is (bijv. op P:)
-   of als je er geen downloads in wilt.
+   wordt ook gezocht. Leeg = `ahn_file_loc`. Handig als `ahn_file_loc` alleen-lezen is of als je er 
+   geen downloads in wilt.
 
-Werkwijze per kaartblad dat de dwarslijnen raakt:
+**Let op: AHN6** gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg`
+(ook meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
+de log; voor de berekening gebruikt de app AHN6 (nog) niet.
 
-1. Zoek in `ahn_file_loc` en `ahn_file_downloaded` de tiff met de naam uit de downloadlink, bijv. `2023_M_01CZ1.TIF` (AHN5)
-   of `M_01CZ1.TIF` (AHN4, uit `M_01CZ1.zip`). Hoofd-/kleine letters maken niet uit en een extra
-   achtervoegsel mag, zodat ook `M_01CZ1_DEFLATE.tif` gevonden wordt.
-2. Niet gevonden: download het blad naar `ahn_file_downloaded` (AHN4-zips worden uitgepakt). Bij 0,5 m is dat ~200 MB per blad.
-3. Heeft het blad geen (werkende) link voor de gekozen versie, dan valt de app terug op AHN4, dat
-   heel Nederland dekt. AHN5 wordt sinds 2023 in drie jaar ingewonnen
-   ([voortgang](https://www.ahn.nl/voortgang-ahn5-2023)). De terugval staat als waarschuwing in de log.
-
-Het product kies je met:
+De app checkt welke kaartbladen de gegenereerde dwarslijnen doorsnijdt. De gebruiker kiest zelf welke data gebruikt
+wordt om de AHN-profielen te genereren:
 
 | Instelling | Standaard | Mogelijk |
 |---|---|---|
@@ -102,32 +95,28 @@ Het product kies je met:
 | `model` | `DTM` | `DTM` (maaiveld) of `DSM` (oppervlakte) |
 | `model_resolutie` | `0.5` | `0.5` of `5` [m] |
 
+De werkwijze per kaartblad dat de dwarslijnen raakt:
+
+1. Zoek in `ahn_file_loc` en `ahn_file_downloaded` de tiff met de naam uit de downloadlink, 
+   bijv. `2023_M_01CZ1.TIF` (AHN5) of `M_01CZ1.TIF` (AHN4, uit `M_01CZ1.zip`). 
+   Hoofd-/kleine letters maken niet uit en een extra achtervoegsel mag, zodat ook `M_01CZ1_DEFLATE.tif` gevonden wordt.
+2. Niet gevonden: download het blad naar `ahn_file_downloaded` (AHN4-zips worden uitgepakt). Bij 0,5 m is dat ~200 MB per blad.
+3. Heeft het blad geen (werkende) link voor de gekozen versie, dan valt de app terug op AHN4, dat
+   heel Nederland dekt. AHN5 wordt sinds 2023 in drie jaar ingewonnen ([voortgang](https://www.ahn.nl/voortgang-ahn5-2023)).
+   De terugval staat als waarschuwing in de log.
+
 Bladen zonder tiff worden met een waarschuwing overgeslagen; in de webapp kun je de dwarslijnen op
 AHN-dekking kleuren om dat te zien. Heeft minstens de helft van de punten op een blad geen hoogte, dan
 staat dat als waarschuwing in de log. Dat kan water zijn, maar ook een AHN5-blad dat nog maar deels
-ingewonnen is (bijv. 40BZ2: het blad bestaat, maar bevat 0,1% data). De app valt dan niet terug op AHN4;
-kies zo nodig zelf `ahn_versie = 4`. Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben
-dezelfde bestandsnamen.
+ingewonnen is (bijv. 40BZ2: het blad bestaat, maar bevat 0,1% data ten tijde van ontwikkeling).
+De app valt dan niet terug op AHN4; kies zo nodig zelf `ahn_versie = 4`.
+**Let op: zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.**
 
 De invoer-shapes (dijkvaklijnen en buitenlijn) moeten in RD New (EPSG:28992, of RD + NAP, EPSG:7415)
 staan, met een `.prj`-bestand. Dat wordt bij de start gecontroleerd: een ander coördinatenstelsel of een
 ontbrekende `.prj` geeft een foutmelding en er wordt niets berekend. Herprojecteer het bestand dan eerst,
 bijv. in QGIS (*Vector › Data Management Tools › Reproject Layer*), of ken RD New toe als de coördinaten
 al in RD staan maar de `.prj` ontbreekt.
-
-**AHN6** gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg`
-(ook meegeleverd) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in
-de log; voor de berekening gebruikt de app AHN6 (nog) niet.
-
-**Binnen HKV** staan AHN5 en AHN4 (DTM 0,5 m) op `P:\OpenData\AHN\AHN5\DTM05` en
-`P:\OpenData\AHN\AHN4\DTM05`. Die namen worden herkend. Gebruik je zo'n map als `ahn_file_loc`,
-zet dan `ahn_file_downloaded` op een eigen map, zodat ontbrekende bladen (bijv. de AHN4-terugval)
-niet op P: terechtkomen:
-
-```ini
-ahn_file_loc = P:\OpenData\AHN\AHN5\DTM05
-ahn_file_downloaded = ahn_data
-```
 
 Licentie: AHN1 t/m AHN4 vallen onder CC0, AHN5 en later onder CC BY 4.0 (bronvermelding: AHN).
 De downloads gebruiken de certificaten van `certifi`, omdat de Windows-certificaatopslag een
@@ -169,7 +158,7 @@ run(Settings(
 
 ### Schematiseren (.prfl)
 
-Een optionele stap ná de berekening: per dijkvak één geschematiseerd profiel voor Hydra-NL (`.prfl`, versie 4).
+Een optionele stap ná de berekening: per dijkvak één geschematiseerd profiel (`.prfl`, versie 4).
 In de webapp met de knop *Schematiseren (.prfl)*, op de commandline met `--schematiseren`
 (`ahn-profielen --config config.ini --schematiseren`) en vanuit Python met `schematise(settings)` na `run(settings)`.
 Nodig: een buitenlijn (opgegeven of afgeleid), zodat bekend is welke kant buiten ligt, en het pakket `prflcheck`.
@@ -183,15 +172,11 @@ Per vak:
    Ligt de dijklijn niet op of bij de kruin, vergroot dan deze afstand.
 3. **Fit van het profiel:** de buitenzijde tot de kruin wordt in één keer gefit als
    *voorland | talud | (berm | talud) × k | kruin*, voor 0 bermen tot het maximale aantal (2). De hellingen zijn
-   per deel begrensd met de regels uit de controle van `prflcheck`: een talud tussen 1:1 en 1:8, een berm tussen
-   1:15 en 1:100, de kruin hooguit 1:15 (het laatste dijkpunt is de buitenkruinlijn) en het voorland hooguit 1:10.
-   Die grenzen, het maximale aantal bermen, de afstand tussen voorlandpunten en de grenzen van de ruwheid worden
-   uit `prflcheck` gelezen, zodat een wijziging daar vanzelf doorwerkt. Op elke grens zit een kleine marge, zodat
+   per deel begrensd met de regels uit de controle van `prflcheck`. Op elke grens zit een kleine marge, zodat
    een profiel na het afronden van z op `schem_decimalen` decimalen niet net over een grens valt. Het resultaat
-   is daardoor altijd een geldig profiel: geen delen tussen 1:8 en 1:15, geen twee bermen achter elkaar,
-   beginnen en eindigen met een talud.
+   is daardoor altijd een geldig profiel.
 
-   Instellingen van de fit (in de app onder *Schematisatie (.prfl)*):
+Instellingen van de fit (in de app onder *Schematisatie (.prfl)*):
 
    | Instelling | Standaard | Betekenis |
    |---|---|---|
@@ -200,6 +185,7 @@ Per vak:
    | `schem_voorland_fit` | 30 m | het voorland telt in de fit alleen tot zover (plus de dijkbreedte) buiten de teen, zodat een verre, hogere uiterwaard de teen niet omlaag trekt |
    | `schem_voorland_delen` | 1 | delen voorland in de fit; meer delen kan een berm aan de teen als voorland zien |
    | `schem_decimalen` | 3 | decimalen van x en z in het `.prfl`; minder decimalen geeft een grotere marge op de grenzen |
+
 4. **Aantal bermen:** een extra berm laat het profiel altijd iets beter passen, ook als er geen berm is. Een berm
    telt daarom alleen mee als:
    - hij minstens `schem_min_bermbreedte` breed is (standaard 3 m);
@@ -221,9 +207,6 @@ Per vak:
    naar buiten (graden t.o.v. noord). De x is de afstand tot de dijklijn. Het memo vermeldt het aantal bermen, de
    RMSE per model en het voorland. Elk profiel wordt gecontroleerd met de Hydra/Ringtoets-regels; een afgekeurd
    profiel wordt wel weggeschreven, met een waarschuwing in de log.
-
-Met de standaard dwarslijn van 200 m is de buitenzijde 100 m lang. Dat past bij Hydra-NL: de HR-locaties liggen
-meestal op ongeveer 100 m van de kruin.
 
 De bestanden komen in `<outputmap>/prfl/`: `<vak>.prfl`, `schematisatie.csv` (overzicht per vak, voor Excel)
 met per vak het aantal bermen, de voorlandpunten en de RMSE, en `schematisatie.json` (voor de webapp). Bij opnieuw schematiseren worden de `.prfl`-bestanden van de vorige
