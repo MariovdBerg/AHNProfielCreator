@@ -40,7 +40,10 @@ def test_demo_note_until_settings_change(tmp_path):
     state = app_server.State(demo_config(str(tmp_path / "demo")), demo=True)
     info = state.settings_info()
     assert info["demo"] == DEMO_NAME
-    assert info["files"]["vakken"]["exists"] and info["files"]["buitenlijn"]["exists"]
+    assert info["files"]["vakken"]["exists"]
+    # Geen buitenlijn meegeleverd: die wordt afgeleid in de outputmap en bestaat nog niet.
+    assert info["files"]["buitenlijn"]["path"].endswith(ppv.OUTPUT_OUTSIDE)
+    assert not info["files"]["buitenlijn"]["exists"]
 
     state.settings = dict(state.settings, interval_length=25.0)
     assert state.settings_info()["demo"] is None
