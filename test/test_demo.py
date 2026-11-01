@@ -30,7 +30,8 @@ def test_demo_runs_offline(tmp_path, offline, logs):
     profiles = read_rows(s.output_cross_ahn)
     assert len(profiles) == 60  # 3 km, om de 50 m
     z = np.array([c[2] for geom, _ in profiles for c in geom.coords])
-    assert np.mean(z == NODATA) < 0.05
+    # Dwarslijnen van 200 m: bij een paar vakken ligt de Lek binnen 100 m van de dijk (water: geen AHN), ~8%
+    assert np.mean(z == NODATA) < 0.1
     assert 8 < z[z != NODATA].max() < 12  # Kruin van de Lekdijk ~9 m NAP
     assert not [m for m in logs() if "geen hoogte" in m or "AHN4" in m]
 
@@ -39,7 +40,10 @@ def test_demo_note_until_settings_change(tmp_path):
     state = app_server.State(demo_config(str(tmp_path / "demo")), demo=True)
     info = state.settings_info()
     assert info["demo"] == DEMO_NAME
-    assert info["files"]["vakken"]["exists"] and info["files"]["buitenlijn"]["exists"]
+    assert info["files"]["vakken"]["exists"]
+    # Geen buitenlijn meegeleverd: die wordt afgeleid in de outputmap en bestaat nog niet.
+    assert info["files"]["buitenlijn"]["path"].endswith(ppv.OUTPUT_OUTSIDE)
+    assert not info["files"]["buitenlijn"]["exists"]
 
     state.settings = dict(state.settings, interval_length=25.0)
     assert state.settings_info()["demo"] is None

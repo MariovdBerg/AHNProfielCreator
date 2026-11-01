@@ -16,7 +16,7 @@ def heights_for(tmp_path, tif, line, stepsize=1.0):
         tmp_path / "cross.shp", [(line, {"vak_id": "A", "CROSS_ID": 1})], {"vak_id": "str", "CROSS_ID": "int"}
     )
     ch = CrossSectionHeights(cross, group_id="vak_id", ahn_tiles=FakeTiles(tif, (0, 0, 100, 100)), ahn_stepsize=stepsize)
-    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"), "ahn")
+    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"))
     return read_rows(tmp_path / "ahn.shp")[0][0]
 
 
@@ -59,7 +59,7 @@ def warnings_for(tmp_path, tif, logs, line):
         cross, group_id="vak_id", ahn_tiles=FakeTiles(tif, (0, 0, 100, 100)), ahn_stepsize=1.0,
         logger=logging.getLogger("ahnprofielcreator"),
     )
-    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"), "ahn")
+    ch.crosssections_height_to_file(str(tmp_path / "ahn.shp"))
     return [m for m in logs() if "geen hoogte" in m]
 
 

@@ -8,8 +8,9 @@ waterkeringen).
 
 - `demo_dijkvakken.shp`: 6 dijkvakken van 500 m (`DV_01` t/m `DV_06`), velden `vak_id`, `traject`,
   `van_m`, `tot_m`.
-- `demo_buitenlijn.shp`: de dijkvakken 20 m naar links verschoven. De Lek (buitenzijde) ligt links van de
-  tekenrichting, dus `outside_offset = 20` met `outside_side = links` geeft hetzelfde resultaat.
+- Geen buitenlijn: de app leidt die af (`outside_offset = 20`, `outside_side = links`). De Lek
+  (buitenzijde) ligt links van de tekenrichting, dus de dijkvakken 20 m naar links verschoven geeft de
+  buitenlijn, als `buitenlijn_offset.shp` in de outputmap.
 - `2023_M_39AZ1_demo.tif`: AHN5 DTM 0,5 m van kaartblad 39AZ1, uitgeknipt tot 100 m rond de dijkvakken
   (daarbuiten nodata), zelfde grid als het blad. De app vindt het via de bladnaam, zodat de demo zonder
   download werkt bij dwarslijnen tot 200 m. Bron: AHN, CC BY 4.0.

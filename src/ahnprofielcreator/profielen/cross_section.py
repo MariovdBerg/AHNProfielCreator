@@ -15,10 +15,10 @@ import fiona
 import numpy as np
 import rasterio
 import rasterio.errors
+import rasterio.transform
 import rasterio.windows
 import shapely.geometry
 import shapely.ops
-import shapely.prepared
 import tqdm.auto as tqdm
 
 
@@ -541,45 +541,6 @@ class CrossSections(IntervalPoints):
 
 class CrossSectionHeights:
     nodata = NODATA
-    lines_char = collections.OrderedDict(
-        [
-            (981, "Maaiveld buitenwaarts"),
-            (985, "Teen geul"),
-            (983, "Insteek geul"),
-            (916, "Teen dijk buitenwaarts"),
-            (7, "Kruin buitenberm"),
-            (12, "Insteek buitenberm"),
-            (918, "Kruin buitentalud"),
-            (19, "Verkeersbelasting kant binnenwaarts"),
-            (18, "Verkeersbelasting kant buitenwaarts"),
-            (917, "Kruin binnentalud"),
-            (13, "Insteek binnenberm"),
-            (6, "Kruin binnenberm"),
-            (915, "Teen dijk binnenwaarts"),
-            (14, "Insteek sloot dijkzijde"),
-            (15, "Slootbodem dijkzijde"),
-            (16, "Slootbodem polderzijde"),
-            (17, "Insteek sloot polderzijde"),
-            (0, "Maaiveld binnenwaarts"),
-        ]
-    )
-    extra_lines_char = {
-        903: "Insteek buitendijkse sloot (rivierzijde)",
-        904: "Insteek buitendijkse sloot (waterkeringzijde)",
-        905: "Bodem buitendijkse sloot (rivierzijde)",
-        906: "Bodem buitendijkse sloot (waterkeringzijde)",
-        907: "As bodem sloot",
-        910: "As buitendijkse sloot (rivierzijde)",
-        919: "Kruin midden",
-        970: "Maaiveld muur (rivierzijde)",
-        972: "Bovenkant muur (rivierzijde)",
-        973: "Bovenkant muur (polderzijde)",
-        971: "Maaiveld muur (polderzijde)",
-        980: "Maaiveld achterland",
-        982: "Linker insteek geul",
-        984: "Linker teen geul",
-        986: "As teen geul",
-    }
 
     def __init__(
         self,
@@ -587,11 +548,6 @@ class CrossSectionHeights:
         group_id=None,
         ahn_tiles=None,
         ahn_stepsize=0.5,
-        lines_file=None,
-        lines_id=None,
-        lines_tolerance=1e-8,
-        lines_filter_col=None,
-        lines_filter_val=None,
         logger=None,
         log_level=logging.INFO,
     ):
@@ -601,20 +557,9 @@ class CrossSectionHeights:
         self.default_group_id = DEFAULT_GROUP_ID
         self.group_id = group_id
 
-        self.lines_filter_col = None
-        self.lines_filter_val = None
-        if lines_filter_col is not None and lines_filter_val is not None:
-            self.lines_filter_col = lines_filter_col
-            self.lines_filter_val = lines_filter_val
-
         # AHN (ahnprofielcreator.ahn.AHNTiles: kaartbladen en lokale/gedownloade tiffs)
         self.ahn_tiles = ahn_tiles
         self.ahn_stepsize = ahn_stepsize
-
-        # 3D lines file
-        self.lines_file = lines_file
-        self.lines_id = lines_id
-        self.lines_tolerance = lines_tolerance
 
         # Input cross-sections.
         self.cross_crs = None
@@ -655,10 +600,11 @@ class CrossSectionHeights:
                     self.cross_input_props[key] = []
                 self.cross_input_props[key].append(row["properties"])
 
-    def write_crosssections_output(self, output_file, crosssections_height, method):
+    def write_crosssections_output(self, output_file, crosssections_height):
         self.logger.debug(f"Writing cross-sections with heights to '{output_file}'...")
 
-        self.process_crosssections()
+        if self.cross_lines is None:
+            self.process_crosssections()
 
         key = self.default_group_id
         if self.group_id is not None:
@@ -668,113 +614,43 @@ class CrossSectionHeights:
         schema = self.cross_schema.copy()
         schema["properties"][DEFAULT_CROSS_ZD] = "int"
         schema["properties"][key] = "str"
-        if method.lower() == "lines":
-            schema["properties"][DEFAULT_CROSS_PNM] = "str"
-            schema["properties"][DEFAULT_CROSS_PID] = "int"
-            schema["geometry"] = "3D Point"
-        elif method.lower() == "ahn":
-            schema["geometry"] = "3D LineString"
+        schema["geometry"] = "3D LineString"
 
         with fiona.open(output_file, "w", "ESRI Shapefile", schema, crs=self.cross_crs) as source:
-            total = sum([len(c) for c in crosssections_height.values()])
-            with tqdm.tqdm(total=total, desc=f"Writing cross-sections with heights to '{output_file}'") as pbar:
-                i = 0
-                for subkey, subcross in crosssections_height.items():
-                    for j, line in enumerate(subcross):
-                        i += 1
-
-                        props = dict(self.cross_input_props[subkey][j])  # Gewone dict: fiona-attributen worden onveranderlijk
-                        props[DEFAULT_CROSS_ZD] = i
-                        props[key] = subkey
-
-                        if method.lower() == "lines":
-                            for l_e, l_i in line:
-                                props[DEFAULT_CROSS_PID] = l_i
-                                props[DEFAULT_CROSS_PNM] = None
-                                if l_i in self.lines_char:
-                                    props[DEFAULT_CROSS_PNM] = self.lines_char[l_i]
-                                elif l_i in self.extra_lines_char:
-                                    props[DEFAULT_CROSS_PNM] = self.extra_lines_char[l_i]
-                                source.write(
-                                    {
-                                        "geometry": shapely.geometry.mapping(l_e),
-                                        "properties": props,
-                                    }
-                                )
-                        elif method.lower() == "ahn":
-                            source.write(
-                                {
-                                    "geometry": shapely.geometry.mapping(line),
-                                    "properties": props,
-                                }
-                            )
-                        pbar.update(1)
+            i = 0
+            for subkey, subcross in crosssections_height.items():
+                for j, line in enumerate(subcross):
+                    i += 1
+                    props = dict(self.cross_input_props[subkey][j])  # Gewone dict: fiona-attributen worden onveranderlijk
+                    props[DEFAULT_CROSS_ZD] = i
+                    props[key] = subkey
+                    source.write({"geometry": shapely.geometry.mapping(line), "properties": props})
 
         self.logger.debug("Done.")
 
-    def process_lines_file(self):
-        self.logger.debug(f"Processing 3D lines file '{self.lines_file}' for column '{self.lines_id}'...")
-
-        elev_lines, elev_prep, elev_props = None, None, None
-        with fiona.open(self.lines_file, "r") as source:
-            elev_lines, elev_prep, elev_props = [], [], []
-
-            for row in tqdm.tqdm(
-                source, desc=f"Processing 3D lines file '{self.lines_file}' for column '{self.lines_id}'"
-            ):
-                if row is None or row["geometry"] is None:
-                    continue
-
-                if self.lines_filter_col is not None and self.lines_filter_val is not None:
-                    # Ignore lines which do not comply with the given filter.
-                    if row["properties"][self.lines_filter_col] != self.lines_filter_val:
-                        continue
-
-                elev_lines.append(shapely.geometry.shape(row["geometry"]))
-                elev_prep.append(shapely.prepared.prep(elev_lines[-1]))
-                elev_props.append(row["properties"][self.lines_id])
-
-        return elev_lines, elev_prep, elev_props
+    def sample_points(self, line):
+        """x/y of the points along `line` at a fixed stepsize (including the start point), as an (n, 2) array."""
+        steps = np.arange(math.ceil(round(line.length, 2) / self.ahn_stepsize) + 1)
+        return shapely.get_coordinates(shapely.line_interpolate_point(line, steps * self.ahn_stepsize))
 
     @staticmethod
-    def get_closest_unique_point(line, inter_geo):
-        # Multiple matches for a supposedly unique point. Only
-        # use the one closest to the center point.
-        m_p = [e for e in inter_geo if e.geom_type.lower() == "point"]
-
-        # Center point on line.
-        center = line.interpolate(0.5, normalized=True)
-
-        # Point with the shortest distance to the line.
-        shortest_dist = math.inf
-        match = None
-        for point in m_p:
-            distance = abs(center.distance(point))
-            if distance < shortest_dist:
-                shortest_dist = distance
-                match = point
-
-        if match is None:
-            raise ValueError("Could not find a closest unique point")
-
-        return match
-
-    @staticmethod
-    def find_raster_height(dataset, heights, geom, nodata, window=None):
-        # `heights` is the part of the raster read with `window` (None = the whole raster).
-        height = nodata
-
-        row, col = dataset.index(geom.x, geom.y)
-        if window is not None:
-            row -= int(window.row_off)
-            col -= int(window.col_off)
+    def find_raster_heights(dataset, heights, xy, nodata, window):
+        """Heights at the points `xy` from `heights`, the part of the raster read with `window`; nodata elsewhere."""
+        z = np.full(len(xy), float(nodata))
+        if len(xy) == 0:
+            return z
+        # Same as dataset.index() per point, but for all points at once.
+        rows, cols = rasterio.transform.rowcol(dataset.transform, xy[:, 0], xy[:, 1])
+        rows = np.asarray(rows, dtype=np.int64) - int(window.row_off)
+        cols = np.asarray(cols, dtype=np.int64) - int(window.col_off)
         maxrow, maxcol = heights.shape
-        if 0 <= row < maxrow and 0 <= col < maxcol:
-            value = heights[row, col]
-            if value != dataset.nodata and not np.isnan(value):
-                height = float(value)
-
-        return shapely.geometry.Point(geom.x, geom.y, height)
+        inside = (rows >= 0) & (rows < maxrow) & (cols >= 0) & (cols < maxcol)
+        values = heights[rows[inside], cols[inside]].astype(float)
+        valid = ~np.isnan(values)
+        if dataset.nodata is not None:
+            valid &= values != dataset.nodata
+        z[np.flatnonzero(inside)[valid]] = values[valid]
+        return z
 
     def read_raster_window(self, dataset, lines):
         """Read only the part of the raster around `lines` (a full 0.5 m AHN sheet is ~500 MB)."""
@@ -803,577 +679,78 @@ class CrossSectionHeights:
             "grotendeels in water; controleer de AHN-dekking op de kaart of kies een andere AHN-versie."
         )
 
-    def crosssections_height_ahn(self, dry_run=False):
-        ahn_map = {}
-        total_lines = 0
+    def crosssections_height_ahn(self):
+        ahn_map = collections.OrderedDict()
         all_lines = []
         for ckey, lines in self.cross_lines.items():
-            total_lines += len(lines)
             all_lines += lines
 
             # Keep track which ckeys correspond to which ahn sheet
             for n_ahn in self.ahn_tiles.sheet_names(lines):
-                if n_ahn not in ahn_map:
-                    ahn_map[n_ahn] = {"valid": None, "colkeys": []}
-                ahn_map[n_ahn]["colkeys"].append(ckey)
+                ahn_map.setdefault(n_ahn, []).append(ckey)
 
-        ahn_files = ", ".join(ahn_map.keys())
-        self.logger.info(f"Finding heights for {total_lines} line(s) in {len(ahn_map)} AHN raster file(s): {ahn_files}...")
+        ahn_names = ", ".join(ahn_map.keys())
+        self.logger.info(f"Finding heights for {len(all_lines)} line(s) in {len(ahn_map)} AHN raster file(s): {ahn_names}...")
         if all_lines:
             self.ahn_tiles.report_ahn6(all_lines)
 
-        if dry_run:
-            self.logger.info("DRY RUN MODE, returning list of required AHN tiles")
-            return ahn_map
-
         # Find local AHN files, download the missing ones.
-        for n_ahn, ahndict in ahn_map.items():
-            ahndict["valid"] = self.ahn_tiles.file(n_ahn)
+        ahn_files = {n_ahn: self.ahn_tiles.file(n_ahn) for n_ahn in ahn_map}
 
-        cross_heights = collections.OrderedDict()
-        for ahn_index, ahndict in tqdm.tqdm(ahn_map.items(), desc="Finding heights in AHN raster files"):
-            # Validate the ahn file
-            if ahndict["valid"] is None:
+        # Points along each line with the user-supplied stepsize; without a height (yet) z = nodata.
+        cross_xy = {ckey: [self.sample_points(line) for line in lines] for ckey, lines in self.cross_lines.items()}
+        cross_z = {ckey: [np.full(len(xy), float(self.nodata)) for xy in xys] for ckey, xys in cross_xy.items()}
+
+        for ahn_index, ckeys in tqdm.tqdm(ahn_map.items(), desc="Finding heights in AHN raster files"):
+            path = ahn_files[ahn_index]
+            if path is None:
                 # AHNTiles has already warned about this sheet.
                 self.logger.debug(f"Could not find a valid file for AHN index {ahn_index}")
                 continue
 
-            # Create points along the line with the user-supplied stepsize
-            # (if the points do not exist already).
-            for ckey in ahndict["colkeys"]:
-                if ckey not in cross_heights:
-                    cross_heights[ckey] = []
-                    for i, line in enumerate(self.cross_lines[ckey]):
-                        steps = range(0, math.ceil(round(line.length, 2) / self.ahn_stepsize) + 1)
-                        points = [line.interpolate(s * self.ahn_stepsize) for s in steps]
-                        cross_heights[ckey].append(points)
+            # All points of these lines without a height so far (a point can be on more than one sheet).
+            todo = [(ckey, i, np.flatnonzero(z == self.nodata)) for ckey in ckeys for i, z in enumerate(cross_z[ckey])]
+            xy = np.concatenate([cross_xy[ckey][i][ind] for ckey, i, ind in todo])
+            with rasterio.open(path) as dataset:
+                bounds = dataset.bounds
+                sheet_lines = [line for ckey in ckeys for line in self.cross_lines[ckey]]
+                ahn_raster, window = self.read_raster_window(dataset, sheet_lines)
+                z = self.find_raster_heights(dataset, ahn_raster, xy, self.nodata, window)
 
-            # Add height information to points.
-            total_lines = sum([len(self.cross_lines[ckey]) for ckey in ahndict["colkeys"]])
-            n_inside = n_missing = 0  # Points within this raster, and those without a height
-            with tqdm.tqdm(total=total_lines, desc="Parsing lines for this AHN file", leave=False) as pbar:
-                with rasterio.open(ahndict["valid"]) as dataset:
-                    bounds = dataset.bounds
-                    sheet_lines = [line for ckey in ahndict["colkeys"] for line in self.cross_lines[ckey]]
-                    ahn_raster, window = self.read_raster_window(dataset, sheet_lines)
-                    for ckey in ahndict["colkeys"]:
-                        for i, line in enumerate(self.cross_lines[ckey]):
-                            for j, point in enumerate(cross_heights[ckey][i]):
-                                if point.has_z and not math.isnan(point.z) and point.z != self.nodata:
-                                    continue
-                                point = self.find_raster_height(dataset, ahn_raster, point, self.nodata, window)
-                                cross_heights[ckey][i][j] = point
-                                if bounds.left <= point.x < bounds.right and bounds.bottom < point.y <= bounds.top:
-                                    n_inside += 1
-                                    n_missing += point.z == self.nodata
-                            pbar.update(1)
-            self.warn_empty_sheet(ahn_index, ahndict["valid"], n_inside, n_missing)
+            start = 0
+            for ckey, i, ind in todo:
+                cross_z[ckey][i][ind] = z[start : start + len(ind)]
+                start += len(ind)
 
-        # Lines without any AHN file get points without heights.
-        for ckey, lines in self.cross_lines.items():
-            if ckey not in cross_heights:
-                cross_heights[ckey] = []
-                for line in lines:
-                    steps = range(0, math.ceil(round(line.length, 2) / self.ahn_stepsize) + 1)
-                    cross_heights[ckey].append([line.interpolate(s * self.ahn_stepsize) for s in steps])
+            # Points within this raster, and those without a height
+            on_sheet = (
+                (bounds.left <= xy[:, 0]) & (xy[:, 0] < bounds.right) & (bounds.bottom < xy[:, 1]) & (xy[:, 1] <= bounds.top)
+            )
+            self.warn_empty_sheet(ahn_index, path, int(on_sheet.sum()), int((z[on_sheet] == self.nodata).sum()))
 
-        # Same order as the input cross-sections (the loop above goes per AHN sheet).
-        cross_heights = collections.OrderedDict((ckey, cross_heights[ckey]) for ckey in self.cross_lines)
+        # Save the points as a LineString per cross-section, in the order of the input. Points without
+        # height are kept (z = nodata), so the points stay at a fixed stepsize along the line.
+        return collections.OrderedDict(
+            (
+                ckey,
+                [shapely.linestrings(np.column_stack([xy, z])) for xy, z in zip(cross_xy[ckey], cross_z[ckey])],
+            )
+            for ckey in self.cross_lines
+        )
 
-        # Convert each list of points to a linestring.
-        self.logger.debug("Converting lists of points to linestrings...")
-        total = sum([len(cross_heights[k]) for k in self.cross_lines])
-        with tqdm.tqdm(total=total, desc="Converting lists of points to linestrings") as pbar:
-            for ckey, lines in self.cross_lines.items():
-                for i, points in enumerate(cross_heights[ckey]):
-                    # Ensure that each line has a z value. Otherwise, assumptions
-                    # might occur (such as 0). We want it to be nodata.
-                    fixed_points = []
-                    for p in points:
-                        if not p.has_z:
-                            p = shapely.geometry.Point(p.x, p.y, self.nodata)
-                        fixed_points.append(p)
-
-                    # Save list of points as a LineString. Points without height are kept (z = nodata),
-                    # so the points stay at a fixed stepsize along the line.
-                    cross_heights[ckey][i] = shapely.geometry.LineString(fixed_points)
-                    pbar.update(1)
-
-        return cross_heights
-
-    def crosssections_height_lines(self):
-        els, epr, epo = self.process_lines_file()
-
-        self.logger.debug("Finding points which intersect cross-sections and 3D lines...")
-
-        total = sum([len(l) for l in self.cross_lines.values()])
-        with tqdm.tqdm(total=total, desc="Finding points which intersect cross-sections and 3D lines") as pbar:
-            cross_heights = collections.OrderedDict()
-            for i, (key, lines) in enumerate(self.cross_lines.items()):
-                cross_heights[key] = []
-
-                # Find the intersecting points for all 3D lines.
-                ml_lines = shapely.geometry.MultiLineString(lines)
-                intersections = [
-                    (l.intersection(ml_lines), o) for l, p, o in zip(els, epr, epo) if p.intersects(ml_lines)
-                ]
-
-                for line in lines:
-                    collect_points = collections.OrderedDict()
-                    for elev_points, elev_prop in intersections:
-                        inter_geo = []
-                        if elev_points.geom_type.lower() == "point":
-                            if line.distance(elev_points) < self.lines_tolerance:
-                                inter_geo = [elev_points]
-                        elif elev_points.geom_type.lower() == "multipoint":
-                            inter_geo = [p for p in elev_points.geoms if line.distance(p) <= self.lines_tolerance]
-                        elif elev_points.geom_type.lower() == "geometrycollection" and not elev_points:
-                            # Empty collection.
-                            pass
-                        else:
-                            # Unexpected type.
-                            raise ValueError(
-                                f"Unexpected geometry type result for"
-                                + f"for intersecting with 3D lines ({elev_points.geom_type})"
-                            )
-
-                        if inter_geo:
-                            # Collect points per type.
-                            if elev_prop not in collect_points:
-                                collect_points[elev_prop] = []
-                            collect_points[elev_prop] += inter_geo
-
-                    # Reduce multiple points to a single point.
-                    matches = []
-                    for elev_prop, inter_geo in collect_points.items():
-                        if len(inter_geo) > 1:
-                            match = self.get_closest_unique_point(line, inter_geo)
-                            matches.append((match, elev_prop))
-                        elif len(inter_geo) == 1:
-                            matches.append((inter_geo[0], elev_prop))
-
-                    # Store the matches
-                    cross_heights[key].append(matches)
-                    pbar.update(1)
-
-        return cross_heights
-
-    def crosssections_height(self, method, dry_run=False):
-        self.logger.debug(f"Creating cross-sections with heights (method: '{method}')...")
+    def crosssections_height(self):
+        self.logger.debug("Creating cross-sections with heights...")
 
         self.process_crosssections()
+        if self.ahn_tiles is None:
+            raise ValueError("AHN tiles are not supplied (ahn_tiles)")
+        return self.crosssections_height_ahn()
 
-        if method.lower() == "ahn":
-            if self.ahn_tiles is None:
-                raise ValueError("AHN tiles are not supplied (ahn_tiles)")
-            return self.crosssections_height_ahn(dry_run=dry_run)
-
-        if method.lower() == "lines":
-            if self.lines_file is None:
-                raise ValueError("3D lines shapefile is not supplied (lines_file)")
-            if self.lines_id is None:
-                raise ValueError("Field of 3D lines shapefile is not supplied (lines_id)")
-            if dry_run:
-                self.logger.warning("Lines has no dry-run functionality, ignoring dry_run parameter")
-            return self.crosssections_height_lines()
-
-        # Method is not ahn or lines.
-        raise ValueError(f"The method should either be 'ahn' or 'lines' (is '{method}')")
-
-    def crosssections_height_to_file(self, output_crosssections_height_file, method):
+    def crosssections_height_to_file(self, output_crosssections_height_file):
         # Determine cross-sections with heights.
-        crosssections_height = self.crosssections_height(method)
+        crosssections_height = self.crosssections_height()
 
         # Write cross-sections with height to a shapefile.
-        self.write_crosssections_output(output_crosssections_height_file, crosssections_height, method)
+        self.write_crosssections_output(output_crosssections_height_file, crosssections_height)
 
         return crosssections_height
-
-
-def minmax_per_segment(line, segment_id, c_points, c_heights, cross_id, tol=1e-8, maxdist=math.inf):
-    # Process line segments.
-    segments = collections.OrderedDict()
-    with fiona.open(line, "r") as source:
-        for row in source:
-            if row is None:
-                continue
-            l_s = shapely.geometry.LineString(row["geometry"]["coordinates"])
-            segments[row["properties"][segment_id]] = l_s
-
-    # Process cross centerpoints and lines.
-    cross_col = collections.OrderedDict()
-    with fiona.open(c_points, "r") as source:
-        for row in source:
-            if row is None:
-                continue
-            point = shapely.geometry.Point(row["geometry"]["coordinates"])
-            cross_col[row["properties"][cross_id]] = {"point": point, "line": None, "rows": []}
-    with fiona.open(c_heights, "r") as source:
-        for row in source:
-            if row is None:
-                continue
-
-            # Shorthand key.
-            ckey = row["properties"][cross_id]
-
-            # Append the whole row
-            cross_col[ckey]["rows"].append(row)
-
-            # Convert geometry info into shapely geometry.
-            if row["geometry"]["type"] == "LineString":
-                l_s = shapely.geometry.LineString(row["geometry"]["coordinates"])
-                cross_col[ckey]["line"] = l_s
-            elif row["geometry"]["type"] == "Point":
-                if cross_col[ckey]["line"] is None:
-                    cross_col[ckey]["line"] = []
-                point = shapely.geometry.Point(row["geometry"]["coordinates"])
-                cross_col[ckey]["line"].append(point)
-            else:
-                raise ValueError(f"Unexpected geometry type ({row['geometry']['type']})")
-
-    # Convert lists of points (from 3D lines file) to a linestring.
-    for ckey, cdict in cross_col.items():
-        if cdict["line"] is None or isinstance(cdict["line"], list):
-            if not cdict["line"]:
-                # No points, add fictive linestring.
-                l_s = shapely.geometry.LineString([(0, 0, NODATA), (1, 1, NODATA)])
-            elif len(cdict["line"]) == 1:
-                # Single point, add a fictive point to the linestring.
-                l_s = shapely.geometry.LineString([(0, 0, NODATA)] + cdict["line"])
-            else:
-                # Two or more points, convert points to linestring.
-                l_s = shapely.geometry.LineString(cdict["line"])
-            # Convert list of points to LineString.
-            cross_col[ckey]["line"] = l_s
-
-    # Snap centerpoints to joined segments.
-    joined = shapely.geometry.MultiLineString([s for s in segments.values()])
-    points = [c["point"] for c in cross_col.values()]
-    psnapp = CrossSections.get_snapped_points(joined, points)
-
-    # Find for each point the segment on which it lies.
-    segment_crosslines = collections.OrderedDict()
-    for cid, point in zip(cross_col, psnapp):
-        for sid, segment in segments.items():
-            if segment.distance(point) <= tol:
-                if sid not in segment_crosslines:
-                    segment_crosslines[sid] = []
-                # Group the lines per segment id
-                segment_crosslines[sid].append(cross_col[cid])
-        if sid not in segment_crosslines:
-            raise ValueError(f"Could not find {sid} in segment_crosslines, {point}")
-
-    # Determine the minimum of the maximum values per segment.
-    segment_min_max = collections.OrderedDict()
-    for sid, sdictlist in segment_crosslines.items():
-        max_vals = []
-        for subid, sdict in enumerate(sdictlist):
-            z_vals = []
-            for crd in list(sdict["line"].coords):
-                dist = abs(sdict["point"].distance(shapely.geometry.Point(crd[0:2])))
-                if math.isnan(crd[2]) or crd[2] == NODATA or dist > maxdist:
-                    continue
-                z_vals.append(crd[2])
-            if z_vals:
-                max_val = max(z_vals)
-            else:
-                max_val = float("nan")
-            segment_crosslines[sid][subid]["max"] = max_val
-            max_vals.append(max_val)
-        segment_min_max[sid] = min(max_vals)
-
-    return segment_min_max, segment_crosslines
-
-
-class RiskeerProfiles:
-    nodata = NODATA
-
-    def __init__(
-        self,
-        profiles_ahn,
-        force_outside=True,
-        profiles_3dl=None,
-        group_id=None,
-        cross_zd=None,
-        logger=None,
-        log_level=logging.INFO,
-    ):
-
-        self.profiles_ahn = profiles_ahn
-        self.profiles_3dl = profiles_3dl
-        self.force_outside = force_outside
-
-        self.default_group_id = DEFAULT_GROUP_ID
-        self.group_id = group_id
-
-        self.default_cross_zd = DEFAULT_CROSS_ZD
-        self.cross_zd = cross_zd
-
-        if logger is None:
-            # Create logger
-            logger = logging.getLogger("CrossSections")
-            logger.setLevel(log_level)
-            if len(logger.handlers) == 0:
-                ch = logging.StreamHandler()
-                ch.setLevel(log_level)
-                logger.addHandler(ch)
-        self.logger = logger
-
-    def create_riskeer_input(self, filename, add_kar_points=True):
-        geom_ahn, props_ahn = self.process_shape(self.profiles_ahn, shapely.geometry.LineString)
-
-        geom_3dl, props_3dl, geom_3dl_org = None, None, None
-        if add_kar_points and self.profiles_3dl is not None:
-            geom_3dl, props_3dl = self.process_shape(self.profiles_3dl, shapely.geometry.Point)
-            if self.force_outside:
-                geom_ahn = self.force_outside_left(geom_ahn, props_ahn, geom_3dl, props_3dl)
-            geom_ahn, geom_3dl, geom_3dl_org = self.adapt_points(geom_ahn, props_ahn, geom_3dl, props_3dl)
-
-        self.write_csv(filename, geom_ahn, props_ahn)
-        if add_kar_points and self.profiles_3dl is not None:
-            self.write_kar_csv(filename, geom_ahn, props_ahn, geom_3dl, props_3dl)
-
-        if self.profiles_3dl is not None:
-            lines_3dl = self.convert_3dl_to_line(geom_ahn, props_ahn, geom_3dl_org, props_3dl)
-            self.write_csv(filename, lines_3dl, props_ahn, extra_id="solo")
-            self.write_kar_csv(
-                filename, lines_3dl, props_ahn, geom_3dl_org, props_3dl, ignore_ahn=True, extra_id="solo"
-            )
-
-    def process_shape(self, location, geom_type):
-        geom, props = None, None
-        with fiona.open(location, "r") as source:
-            props = collections.OrderedDict()
-            geom = collections.OrderedDict()
-
-            for row in source:
-                if row["geometry"] is None:
-                    continue
-
-                key = self.default_group_id
-                if self.group_id is not None:
-                    key = row["properties"][self.group_id]
-
-                if key not in geom:
-                    geom[key] = []
-                geom[key].append(geom_type(row["geometry"]["coordinates"]))
-
-                if key not in props:
-                    props[key] = []
-                props[key].append(row["properties"])
-
-        return geom, props
-
-    def force_outside_left(self, geom_ahn, props_ahn, geom_3dl, props_3dl):
-        for key in geom_ahn:
-            for i, (ahn, props) in enumerate(zip(geom_ahn[key], props_ahn[key])):
-                # Get all 3DL points for this line
-                _, opoints, opoint_props = self._get_3dl_points(props, geom_3dl[key], props_3dl[key])
-
-                # Ignore these props, wrong order in 3dl limburg?
-                points, point_props = [], []
-                for point, pprop in zip(opoints, opoint_props):
-                    if pprop[DEFAULT_CROSS_PNM] not in ["Maaiveld buitenwaarts", "Teen dijk buitenwaarts"]:
-                        points.append(point)
-                        point_props.append(pprop)
-
-                # Can only say something about the orientation with at least two points
-                if len(points) < 2:
-                    continue
-
-                startpoint = shapely.geometry.Point(ahn.coords[0][0:2])
-                d1 = startpoint.distance(shapely.geometry.Point(points[0].coords[0][0:2]))
-                d2 = startpoint.distance(shapely.geometry.Point(points[1].coords[0][0:2]))
-                if d1 > d2:
-                    self.logger.info(
-                        f"flipping {props[self._get_zid()]} because {point_props[0][DEFAULT_CROSS_PNM]} is inside of {point_props[1][DEFAULT_CROSS_PNM]}"
-                    )
-                    geom_ahn[key][i] = shapely.geometry.LineString(ahn.coords[::-1])
-
-        return geom_ahn
-
-    def convert_3dl_to_line(self, geom_ahn, props_ahn, geom_3dl, props_3dl):
-        lines = collections.OrderedDict()
-        for key in geom_ahn:
-            lines[key] = [None] * len(geom_ahn[key])
-            for i, (ahn, props) in enumerate(zip(geom_ahn[key], props_ahn[key])):
-                # Get all 3DL points for this line
-                _, points, point_props = self._get_3dl_points(props, geom_3dl[key], props_3dl[key])
-                if len(points) > 1:
-                    lines[key][i] = shapely.geometry.LineString(points)
-
-        return lines
-
-    def _get_zid(self):
-        zid = self.default_cross_zd
-        if self.cross_zd is not None:
-            zid = self.cross_zd
-
-        return zid
-
-    def _get_3dl_points(self, line_props, geom_3dl_subset, props_3dl_subset):
-        zid = self._get_zid()
-        acceptable_keys = list(CrossSectionHeights.lines_char.values())
-
-        # Get all 3DL points for this line.
-        filtered = collections.OrderedDict()
-        for j, (p, prop) in enumerate(zip(geom_3dl_subset, props_3dl_subset)):
-            if prop[DEFAULT_CROSS_PNM] in acceptable_keys and prop[zid] == line_props[zid]:
-                filtered[prop[DEFAULT_CROSS_PNM]] = {"ind": j, "point": p, "prop": prop}
-
-        # Put them in the right order.
-        point_inds, points, props = [], [], []
-        for k in CrossSectionHeights.lines_char.values():
-            if k in filtered:
-                point_inds.append(filtered[k]["ind"])
-                points.append(filtered[k]["point"])
-                props.append(filtered[k]["prop"])
-
-        return point_inds, points, props
-
-    def adapt_points(self, geom_ahn, props_ahn, geom_3dl, props_3dl):
-        geom_ahn_org = {k: [shapely.geometry.LineString(l) for l in v] for k, v in geom_ahn.items()}
-        geom_3dl_org = {k: [shapely.geometry.Point(p) for p in v] for k, v in geom_3dl.items()}
-
-        for key in geom_ahn:
-            for i, (ahn, props) in enumerate(zip(geom_ahn[key], props_ahn[key])):
-                # Get all 3DL points for this line
-                point_inds, points, point_props = self._get_3dl_points(props, geom_3dl[key], props_3dl[key])
-
-                # Create new line without nodata.
-                new_ahn = [c for c in ahn.coords if not math.isnan(c[2]) and c[2] != self.nodata]
-                if not new_ahn:
-                    continue
-
-                ahn = shapely.geometry.LineString(new_ahn)
-                geom_ahn[key][i] = ahn
-
-                if len(ahn.coords) > 0:
-                    # Snap points to line.
-                    snapped_points = CrossSections.get_snapped_points(ahn, points)
-
-                    # # Create a new linestring which includes the snapped points.
-                    # coords = {}
-                    # for c in ahn.coords:
-                    #     point = shapely.geometry.Point(c)
-                    #     dist = ahn.project(point, normalized=True)
-                    #     coords[dist] = point
-                    # for point in snapped_points:
-                    #     dist = ahn.project(point, normalized=True)
-                    #     coords[dist] = point
-                    # coords = collections.OrderedDict(sorted(coords.items()))
-                    # geom_ahn[key][i] = shapely.geometry.LineString(list(coords.values()))
-
-                    startp = shapely.geometry.Point(geom_ahn_org[key][i].coords[0][0:2])
-                    endp = shapely.geometry.Point(geom_ahn_org[key][i].coords[-1][0:2])
-                    for j, org_point, point, pprop in zip(point_inds, points, snapped_points.geoms, point_props):
-                        # Overwrite 3DL points with snapped 3DL points
-                        geom_3dl[key][j] = point
-
-                        # Adjust ahn profile to include characteristic points outside ahn profile.
-                        # The ahn profile can be shorter due to nodata that has been filtered out.
-                        point2d = shapely.geometry.Point(org_point.coords[0][0:2])
-                        valid_ahn_start = shapely.geometry.Point(geom_ahn[key][i].coords[0][0:2])
-                        valid_ahn_end = shapely.geometry.Point(geom_ahn[key][i].coords[-1][0:2])
-                        startoutside = startp.distance(point2d) < startp.distance(valid_ahn_start)
-                        stopoutside = endp.distance(point2d) < endp.distance(valid_ahn_end)
-                        if startoutside or stopoutside:
-                            self.logger.info(f"{props[self._get_zid()]}, adjusting for {pprop[DEFAULT_CROSS_PNM]}")
-                        if startoutside:
-                            coords = [org_point.coords[0]] + list(geom_ahn[key][i].coords)
-                            geom_ahn[key][i] = shapely.geometry.LineString(coords)
-                        elif stopoutside:
-                            coords = list(geom_ahn[key][i].coords) + [org_point.coords[0]]
-                            geom_ahn[key][i] = shapely.geometry.LineString(coords)
-
-        return geom_ahn, geom_3dl, geom_3dl_org
-
-    def write_csv(self, filename, geom_ahn, props_ahn, extra_id=""):
-        zid = self._get_zid()
-
-        lines = collections.OrderedDict()
-        for key in geom_ahn:
-            maxelements = []
-            for g in geom_ahn[key]:
-                if g is not None:
-                    maxelements.append(len([c for c in g.coords if not math.isnan(c[2]) and c[2] != self.nodata]))
-                else:
-                    maxelements.append(0)
-            maxelements = 3 * max(maxelements)
-
-            lines[key] = ["LOCATIONID;X1;Y1;Z1;.....;Xn;Yn;Zn;(Profiel)" + ";".join([""] * (maxelements - 9))]
-            for geom, props in zip(geom_ahn[key], props_ahn[key]):
-                if geom is None:
-                    continue
-
-                numelements = 3 * len([c for c in geom.coords if not math.isnan(c[2]) and c[2] != self.nodata])
-                line = [
-                    f"{c[0]:.3f};{c[1]:.3f};{c[2]:.3f}"
-                    for c in geom.coords
-                    if not math.isnan(c[2]) and c[2] != self.nodata
-                ]
-                line = line + [""] * (maxelements - numelements)
-                line = ";".join(line)
-                lines[key].append(f"{props[zid]};{line}")
-
-        for key in geom_ahn:
-            if len(geom_ahn) == 1:
-                fname = str(filename)
-            else:
-                fname = ".".join(str(filename).split(".")[:-1] + [f"_{key}" + filename.split(".")[-1]])
-
-            if extra_id:
-                fname = ".".join(fname.split(".")[:-1] + [extra_id] + [fname.split(".")[-1]])
-
-            with open(fname, "w") as f:
-                for line in lines[key]:
-                    f.write(f"{line}\n")
-
-    def write_kar_csv(self, filename, geom_ahn, props_ahn, geom_3dl, props_3dl, ignore_ahn=False, extra_id=""):
-        zid = self._get_zid()
-
-        lines = collections.OrderedDict()
-        for key in geom_ahn:
-            # Header
-            lines[key] = [
-                "LOCATIONID;" + ";".join([f"X_{k};Y_{k};Z_{k}" for k in CrossSectionHeights.lines_char.values()])
-            ]
-
-            for ahn, props in zip(geom_ahn[key], props_ahn[key]):
-                # Default values. lines_char is already in the correct order.
-                kar = collections.OrderedDict()
-                for k in CrossSectionHeights.lines_char.values():
-                    kar[k] = (-1, -1, -1)
-
-                # Overwrite default values with found 3DL points.
-                _, points, point_props = self._get_3dl_points(props, geom_3dl[key], props_3dl[key])
-                for p, prop in zip(points, point_props):
-                    if prop[DEFAULT_CROSS_PNM] in kar:
-                        kar[prop[DEFAULT_CROSS_PNM]] = p.coords[0]
-                    else:
-                        raise KeyError(f"{prop[DEFAULT_CROSS_PNM]} does not exist...")
-
-                if ahn is None:
-                    if ignore_ahn:
-                        continue
-                    elif not points:
-                        continue
-
-                lines[key].append(
-                    f"{props[zid]};" + ";".join([f"{k[0]:.3f};{k[1]:.3f};{k[2]:.3f}" for k in kar.values()])
-                )
-
-        for key in geom_ahn:
-            if len(geom_ahn) == 1:
-                fname = str(filename)
-            else:
-                fname = ".".join(str(filename).split(".")[:-1] + [f"_{key}" + filename.split(".")[-1]])
-
-            extra = ["krp"]
-            if extra_id:
-                extra = [extra_id, "krp"]
-            fname = ".".join(fname.split(".")[:-1] + extra + [fname.split(".")[-1]])
-
-            with open(fname, "w") as f:
-                for line in lines[key]:
-                    f.write(f"{line}\n")
