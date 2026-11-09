@@ -36,15 +36,19 @@ from .profielen.constants import DEFAULT_CROSS_ID, NODATA
 PRFLCHECK_URL = schem_cross.PRFLCHECK_URL
 import_prflcheck = schem_cross.laad_prflcheck
 
+TRAJECT_FIELD = "traject"  # Attribuut van de dijkvakken met het (norm)traject; optioneel
+
 
 def read_profiles(path, group_id):
     """
     Lees de AHN-dwarslijnen per vak als (d, z): afstand tot de dijklijn (negatief = beginzijde) en hoogte.
 
-    Geeft per vak een lijst met dicts met 'id', 'd', 'z' (NaN zonder hoogte) en 'angle' (richting naar buiten).
+    Geeft per vak een lijst met dicts met 'id', 'd', 'z' (NaN zonder hoogte), 'angle' (richting naar buiten) en
+    'traject' (attribuut `TRAJECT_FIELD`, hoofdletterongevoelig; None als dat ontbreekt).
     """
     profiles = collections.OrderedDict()
     with fiona.open(path) as source:
+        traject_field = next((k for k in source.schema["properties"] if k.lower() == TRAJECT_FIELD), None)
         for row in source:
             if row is None or row.geometry is None:
                 continue
@@ -56,9 +60,19 @@ def read_profiles(path, group_id):
             d = np.hypot(xyz[:, 0] - xyz[0, 0], xyz[:, 1] - xyz[0, 1]) - offset
             z = np.where(xyz[:, 2] == NODATA, np.nan, xyz[:, 2])
             profiles.setdefault(str(props[group_id]), []).append(
-                {"id": props.get(DEFAULT_CROSS_ID), "d": d, "z": z, "angle": props.get("angle")}
+                {
+                    "id": props.get(DEFAULT_CROSS_ID), "d": d, "z": z, "angle": props.get("angle"),
+                    "traject": props.get(traject_field) if traject_field else None,
+                }
             )
     return profiles
+
+
+def traject(profiles):
+    """Traject(en) van de profielen van een vak, in volgorde van voorkomen en gescheiden door ', '; None zonder."""
+    names = dict.fromkeys(str(p["traject"]).strip() for p in profiles if p.get("traject") is not None)
+    names.pop("", None)
+    return ", ".join(names) or None
 
 
 def mean_direction(angles):
@@ -95,6 +109,7 @@ def schematise_vak(vak, profiles, settings):
     """Schematiseer de profielen van één vak; geeft een dict met het resultaat (zie `schematise`)."""
     result = {
         "vak": vak,
+        "traject": traject(profiles),
         "n_profielen": len(profiles),
         "richting": mean_direction(p["angle"] for p in profiles),
         "representatief": None,
@@ -196,7 +211,7 @@ def schematise(settings, logger):
         try:
             result = schematise_vak(vak, vak_profiles, settings)
         except ValueError as e:
-            result = {"vak": vak, "n_profielen": len(vak_profiles), "fout": str(e)}
+            result = {"vak": vak, "traject": traject(vak_profiles), "n_profielen": len(vak_profiles), "fout": str(e)}
             logger.warning(f"Vak {vak}: niet geschematiseerd, {e}.")
             results.append(result)
             continue
@@ -249,7 +264,7 @@ def write_summary(settings, results):
         json.dump(data, f, ensure_ascii=False, indent=1)
 
     columns = [
-        "vak", "bestand", "n_profielen", "kruinhoogte", "richting", "bermen", "n_dijkpunten", "n_voorlandpunten",
+        "vak", "traject", "bestand", "n_profielen", "kruinhoogte", "richting", "bermen", "n_dijkpunten", "n_voorlandpunten",
         "voorland_verlaagd", "rmse", "check", "omschrijving",
     ]
     with open(os.path.splitext(settings.output_schem)[0] + ".csv", "w", encoding="utf-8-sig", newline="") as f:
@@ -260,6 +275,7 @@ def write_summary(settings, results):
             writer.writerow(
                 [
                     r["vak"],
+                    r.get("traject") or "",
                     r.get("bestand") or "",
                     r["n_profielen"],
                     _decimal(r.get("kruinhoogte")),

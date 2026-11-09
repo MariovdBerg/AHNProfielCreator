@@ -1,5 +1,6 @@
 """Schematisatie van de AHN-profielen tot een Hydra-NL profiel (.prfl) per vak."""
 
+import csv
 import json
 import os
 
@@ -189,6 +190,11 @@ def test_mean_direction_around_north():
     assert schematisatie.mean_direction([]) is None
 
 
+def test_traject():
+    assert schematisatie.traject([{"traject": "44-1"}, {"traject": " 44-1"}, {"traject": "43-6"}]) == "44-1, 43-6"
+    assert schematisatie.traject([{"traject": None}, {"traject": ""}, {}]) is None
+
+
 def test_file_name():
     assert schematisatie.file_name("DV 01/a") == "DV_01_a.prfl"
     assert schematisatie.file_name("..") == "vak.prfl"
@@ -224,7 +230,11 @@ def dike_tif(tmp_path):
 @pytest.fixture
 def dike_settings(tmp_path, dike_tif, monkeypatch):
     monkeypatch.setattr(ppv.ahn, "AHNTiles", lambda folder, **kwargs: FakeTiles(dike_tif, (0, 0, 100, 100)))
-    dijk = write_lines(tmp_path / "dijk.shp", [(shapely.geometry.LineString([(10, 50), (90, 50)]), {"vak_id": "A"})])
+    dijk = write_lines(
+        tmp_path / "dijk.shp",
+        [(shapely.geometry.LineString([(10, 50), (90, 50)]), {"vak_id": "A", "traject": "44-1"})],
+        properties={"vak_id": "str", "traject": "str"},
+    )
     return ppv.Settings(
         projectmap=str(tmp_path / "uit"),
         input_line=dijk,
@@ -266,7 +276,10 @@ def test_schematise_dike(dike_settings):
     assert profiel.voorland == len(voorland["x"])
     with open(dike_settings.output_schem, encoding="utf-8") as f:
         assert json.load(f)["vakken"][0]["bestand"] == "A.prfl"
-    assert os.path.isfile(dike_settings.output_schem.replace(".json", ".csv"))
+    assert result["traject"] == "44-1"
+    with open(dike_settings.output_schem.replace(".json", ".csv"), encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f, delimiter=";"))
+    assert len(rows) == 1 and rows[0]["vak"] == "A" and rows[0]["traject"] == "44-1"
 
 
 def test_schematise_removes_previous_files(dike_settings):

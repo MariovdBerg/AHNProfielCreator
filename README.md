@@ -457,6 +457,7 @@ Nederlandse Excel; in pandas: `sep=";", decimal=","`):
 | Kolom | Betekenis |
 |---|---|
 | `vak`, `bestand` | vak en naam van het `.prfl`-bestand |
+| `traject` | (norm)traject uit het attribuut `traject` van de dijkvakken; leeg als dat attribuut ontbreekt (bij meerdere trajecten in één vak gescheiden door `, `) |
 | `n_profielen` | aantal AHN-profielen in het vak |
 | `kruinhoogte` | [m NAP] kruinhoogte in het `.prfl` |
 | `richting` | [graden t.o.v. noord] gemiddelde dijknormaal naar buiten |
