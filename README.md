@@ -1,7 +1,7 @@
 # AHNProfielCreator
 
 Genereert AHN-hoogteprofielen dwars op een dijktraject, per dijkvak. Optioneel maakt de app per dijkvak één
-geschematiseerd profiel (`.prfl`) voor Hydra-NL/Ringtoets.
+geschematiseerd profiel (`.prfl`) voor Hydra-NL/HydraRing.
 
 ```
 dijkvakken (.shp) ─┬─> 1. buitenlijn          buitenlijn_offset.shp   (alleen als die afgeleid wordt)
@@ -25,10 +25,8 @@ vanaf de commandline of vanuit Python.
 
 ## Snel starten (demo)
 
-Er komt een demotraject mee: 3 km Lekdijk bij Schalkwijk (normtraject 44-1) in zes dijkvakken, met een
-uitgeknipte AHN5-strook. De buitenlijn leidt de app zelf af uit de dijkvakken. Daarmee draai je een volledige
-berekening zonder eigen data en zonder AHN-downloads. Nodig: [Miniforge](https://conda-forge.org/download/) of
-een andere conda en (voor het schematiseren) internet bij het aanmaken van de omgeving.
+Nodig: [Miniforge](https://conda-forge.org/download/) of een andere conda en (voor het schematiseren) 
+internet bij het aanmaken van de omgeving.
 
 1. Haal de code op en ga naar de ontwikkelmap (de map met `src`):
 
@@ -50,7 +48,7 @@ een andere conda en (voor het schematiseren) internet bij het aanmaken van de om
    conda activate ahnprofielcreator
    ```
 
-3. Start de demo, op een van twee manieren:
+3. Start de demo, op een van drie manieren:
 
    - **Webapp:** dubbelklik op `start_app.bat`. De browser opent op <http://127.0.0.1:8050/> met het project
      `demo` op de kaart. Klik *Berekening starten* en daarna *Schematiseren (.prfl)*, en klik op een dwarslijn
@@ -66,6 +64,17 @@ een andere conda en (voor het schematiseren) internet bij het aanmaken van de om
      ```
 
      De uitvoer komt in `demo\uitvoer\`.
+   - **Python**: na `python -m pip install -e .`:
+
+     ```python
+     from ahnprofielcreator import Settings, run, schematise
+     from ahnprofielcreator.demo import demo_config
+     
+     settings = Settings(**demo_config())
+     run(settings)
+     schematise(settings)
+     ```
+     De uitvoer komt in `demo\uitvoer\`.
 
 De berekening duurt enkele seconden. Op de commandline eindigt de log met:
 
@@ -80,16 +89,7 @@ Klaar: 6 van 6 vakken geschematiseerd (6 zonder fouten), output in '...\demo\uit
 In de uitvoermap staan dan de afgeleide buitenlijn, 300 intervalpunten, 300 dwarslijnen met AHN-hoogtes en per
 vak een `.prfl`-bestand; zie [Uitvoer](#uitvoer) voor wat er in elk bestand staat.
 
-Vanuit Python gaat het zo (na `python -m pip install -e .`):
 
-```python
-from ahnprofielcreator import Settings, run, schematise
-from ahnprofielcreator.demo import demo_config
-
-settings = Settings(**demo_config())  # uitvoer in demo/uitvoer
-run(settings)
-schematise(settings)
-```
 
 Voor een eigen traject: maak een project in de werkmap (in de webapp met *Nieuw project…*), zet je
 dijkvakken in de map `invoer` en vul de instellingen in; zie [Werkmap en projecten](#werkmap-en-projecten) en
@@ -193,19 +193,19 @@ dat ze aan de buitenkant beginnen. Zonder buitenlijn blijft de richting van de d
 niet geschematiseerd worden. Er zijn twee manieren:
 
 1. **Opgeven** (`input_line_outside`): een lijn-shapefile in RD New aan de buitenzijde, bijv. de waterlijn of de
-   buitenteen. Elke dwarslijn moet de buitenlijn snijden, dus binnen de halve `cross_length` van de dijklijn,
-   en de buitenlijn mag de dijklijn niet kruisen. Heeft de buitenlijn het vak-attribuut (`group_id`), dan wordt
+   buitenteen. Heeft de buitenlijn het vak-attribuut (`group_id`), dan wordt
    per vak de eigen buitenlijn gebruikt; dan moet elk vak er een hebben.
 2. **Afleiden** (zoals "Offset Curves" in QGIS): laat `input_line_outside` leeg en zet `outside_offset` op een
    afstand in meters, bijv. `20`. De dijkvakken worden dan zoveel naar links of rechts (`outside_side`) van hun
    tekenrichting verschoven en weggeschreven als `buitenlijn_offset.shp` in de uitvoermap. Het demotraject werkt
-   zo. Let op:
+   zo. 
+
+Let op bij van de buitenlijn (zowel *Opgeven* als bij *Afleiden*):
    - De afstand moet kleiner zijn dan de halve `cross_length`, anders snijden de dwarslijnen de lijn niet.
    - Links/rechts is ten opzichte van de richting waarin elk dijkvak getekend is. Zijn de vakken niet
      allemaal in dezelfde richting getekend, dan ligt de afgeleide buitenlijn bij sommige vakken aan de
      verkeerde kant. Controleer dat op de kaart in de webapp (knop *Genereer buitenlijn*).
-
-Een intervalpunt waarvan de dwarslijn de buitenlijn niet snijdt, krijgt geen dwarslijn; de webapp toont zulke
+   - Een intervalpunt waarvan de dwarslijn de buitenlijn niet snijdt, krijgt geen dwarslijn; de webapp toont zulke
 punten in rood.
 
 ### AHN-data
