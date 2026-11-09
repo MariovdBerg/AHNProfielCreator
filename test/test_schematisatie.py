@@ -4,6 +4,7 @@ import csv
 import json
 import os
 
+import fiona
 import numpy as np
 import pytest
 import rasterio
@@ -280,6 +281,22 @@ def test_schematise_dike(dike_settings):
     with open(dike_settings.output_schem.replace(".json", ".csv"), encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f, delimiter=";"))
     assert len(rows) == 1 and rows[0]["vak"] == "A" and rows[0]["traject"] == "44-1"
+
+
+def test_schematise_stops_for_vak_in_more_trajecten(dike_settings):
+    # Profielen van vak A met een ander traject (de dijkvakken zelf hebben een unieke vak_id met één traject):
+    # dat mag niet, de schematisatie stopt zonder iets te schrijven.
+    ppv.run(dike_settings)
+    path = dike_settings.output_cross_ahn
+    with fiona.open(path) as src:
+        meta, rows = src.meta, list(src)
+    with fiona.open(path, "w", **meta) as dst:
+        for i, row in enumerate(rows):
+            props = dict(row.properties, traject="43-6" if i >= len(rows) // 2 else "44-1")
+            dst.write(fiona.Feature(geometry=row.geometry, properties=fiona.Properties(**props)))
+    with pytest.raises(ValueError, match=r"vak A \(44-1, 43-6\)"):
+        ppv.schematise(dike_settings)
+    assert not os.path.exists(dike_settings.output_prfl_dir)
 
 
 def test_schematise_removes_previous_files(dike_settings):

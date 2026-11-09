@@ -68,11 +68,27 @@ def read_profiles(path, group_id):
     return profiles
 
 
-def traject(profiles):
-    """Traject(en) van de profielen van een vak, in volgorde van voorkomen en gescheiden door ', '; None zonder."""
+def trajecten(profiles):
+    """De verschillende trajecten van de profielen van een vak, in volgorde van voorkomen (lege overgeslagen)."""
     names = dict.fromkeys(str(p["traject"]).strip() for p in profiles if p.get("traject") is not None)
     names.pop("", None)
-    return ", ".join(names) or None
+    return list(names)
+
+
+def traject(profiles):
+    """Traject van de profielen van een vak (zie `check_trajecten`); None zonder."""
+    return ", ".join(trajecten(profiles)) or None
+
+
+def check_trajecten(profiles):
+    """Fout (ValueError) als een vak in meer dan één traject ligt; noemt alle vakken waarvoor dat geldt."""
+    fout = {vak: names for vak, names in ((v, trajecten(p)) for v, p in profiles.items()) if len(names) > 1}
+    if fout:
+        raise ValueError(
+            "Een vak hoort in één traject te liggen; controleer het attribuut "
+            f"'{TRAJECT_FIELD}' van de dijkvakken. In meerdere trajecten: "
+            + "; ".join(f"vak {vak} ({', '.join(names)})" for vak, names in fout.items())
+        )
 
 
 def mean_direction(angles):
@@ -202,6 +218,7 @@ def schematise(settings, logger):
     schem_cross.hydra_grenzen(fit_instellingen(settings))  # Onmogelijke instellingen meteen melden, niet per vak
 
     profiles = read_profiles(settings.output_cross_ahn, settings.group_id)
+    check_trajecten(profiles)  # Vóór het opruimen, zodat de vorige schematisatie blijft staan
     out_dir = settings.output_prfl_dir
     os.makedirs(out_dir, exist_ok=True)
     remove_previous(settings)
