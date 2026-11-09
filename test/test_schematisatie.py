@@ -196,6 +196,11 @@ def test_traject():
     assert schematisatie.traject([{"traject": None}, {"traject": ""}, {}]) is None
 
 
+def test_profiel_id():
+    assert schematisatie.profiel_id({"vak": "DV 01", "traject": "44-1"}) == "44-1_DV_01"
+    assert schematisatie.profiel_id({"vak": "DV_01", "traject": None}) == "DV_01"  # Zonder traject alleen het vak
+
+
 def test_file_name():
     assert schematisatie.file_name("DV 01/a") == "DV_01_a.prfl"
     assert schematisatie.file_name("..") == "vak.prfl"
@@ -269,7 +274,7 @@ def test_schematise_dike(dike_settings):
     path = os.path.join(dike_settings.output_prfl_dir, "A.prfl")
     profiel = prflcheck.Profiel.from_file(path)
     assert profiel.check() == prflcheck.ProfielError.OK
-    assert profiel.id == "A" and profiel.richting == pytest.approx(180, abs=0.5)
+    assert profiel.id == "44-1_A" and profiel.richting == pytest.approx(180, abs=0.5)
     assert profiel.kruinhoogte == pytest.approx(Z_CREST, abs=0.1)
     voorland = result["voorland"]
     assert voorland["x"][0] == pytest.approx(-40, abs=0.5) and voorland["x"][-1] == hydra["x"][0]

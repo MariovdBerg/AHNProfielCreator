@@ -106,6 +106,12 @@ def file_name(vak):
     return f"{name or 'vak'}.prfl"
 
 
+def profiel_id(result):
+    """ID in het .prfl: '{traject}_{vak}', of alleen het vak zonder traject; witruimte wordt '_'."""
+    name = f"{result['traject']}_{result['vak']}" if result.get("traject") else str(result["vak"])
+    return re.sub(r"\s+", "_", name.strip())
+
+
 def fit_instellingen(settings):
     """Instellingen van de fit (`schem_cross.FitInstellingen`) uit de instellingen `schem_*`."""
     return schem_cross.FitInstellingen(
@@ -187,7 +193,7 @@ def make_prfl(result, settings, prflcheck):
             regel += f"; eerste punt {result['voorland_verlaagd']:.2f} m verlaagd (geen voorlandpunt lager dan het eerste)"
         memo.append(regel + ".")
     return prflcheck.Profiel(
-        id=re.sub(r"\s+", "_", str(result["vak"])),
+        id=profiel_id(result),
         richting=result["richting"] if result["richting"] is not None else math.nan,
         # Naar boven afronden: een lagere kruinhoogte dan het laatste dijkpunt keurt Hydra af (regel 122).
         kruinhoogte=math.ceil(round(result["kruin"]["z"] * 100, 6)) / 100,

@@ -174,6 +174,8 @@ Eén shapefile (`input_line`) met de dijklijn, opgedeeld in dijkvakken:
   Andere geometrieën (punten, vlakken) worden overgeslagen.
 - **Vak-attribuut:** het attribuut `group_id` (standaard `vak_id`) moet bestaan en uniek zijn: één feature per
   vak. De naam komt terug in de uitvoer en als bestandsnaam van het `.prfl`.
+- **Traject-attribuut (optioneel):** `traject`, het (norm)traject van het vak. Het `ID` in het `.prfl` wordt dan
+  `{traject}_{vak}` (bijv. `44-1_DV_01`), anders alleen het vak.
 - **Coördinaten:** RD New (EPSG:28992, of RD + NAP, EPSG:7415), met een `.prj`-bestand. Een ander stelsel of een
   ontbrekende `.prj` geeft een foutmelding en er wordt niets berekend. Herprojecteer het bestand dan eerst, bijv.
   in QGIS (*Vector › Data Management Tools › Reproject Layer*), of ken RD New toe als de coördinaten al in RD
