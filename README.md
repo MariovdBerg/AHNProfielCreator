@@ -420,12 +420,11 @@ Alle attributen van de dijkvakken (zoals `vak_id`) worden overgenomen. Daarbij k
 
 | Attribuut | In | Betekenis |
 |---|---|---|
-| `POINT_ID` | punten, dwarslijnen | volgnummer van het intervalpunt over het hele traject |
-| `CROSS_ID` | dwarslijnen | volgnummer van de dwarslijn over het hele traject |
+| `POINT_ID` | punten, dwarslijnen, AHN-profielen | volgnummer van het intervalpunt over het hele traject |
+| `CROSS_ID` | dwarslijnen, AHN-profielen | volgnummer van de dwarslijn (en het AHN-profiel) over het hele traject; wijkt af van `POINT_ID` zodra er dwarslijnen zijn overgeslagen omdat ze de buitenlijn niet snijden |
 | `mid_x`, `mid_y` | dwarslijnen | RD-coördinaten van het intervalpunt (het snijpunt met de dijklijn) |
 | `angle` | dwarslijnen | richting van de dijklijn naar de buitenzijde, in graden t.o.v. noord (met de klok mee); leeg zonder buitenlijn |
 | `LEFTRIGHT`, `TOPBOTTOM` | dwarslijnen | of de lijn van west naar oost resp. van noord naar zuid loopt (voor het tekenen) |
-| `CROSS_Z_ID` | AHN-profielen | volgnummer van het profiel |
 
 ### De AHN-profielen lezen
 

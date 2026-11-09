@@ -612,17 +612,13 @@ class CrossSectionHeights:
 
         # Extend existing schema.
         schema = self.cross_schema.copy()
-        schema["properties"][DEFAULT_CROSS_ZD] = "int"
         schema["properties"][key] = "str"
         schema["geometry"] = "3D LineString"
 
         with fiona.open(output_file, "w", "ESRI Shapefile", schema, crs=self.cross_crs) as source:
-            i = 0
             for subkey, subcross in crosssections_height.items():
                 for j, line in enumerate(subcross):
-                    i += 1
                     props = dict(self.cross_input_props[subkey][j])  # Gewone dict: fiona-attributen worden onveranderlijk
-                    props[DEFAULT_CROSS_ZD] = i
                     props[key] = subkey
                     source.write({"geometry": shapely.geometry.mapping(line), "properties": props})
 
