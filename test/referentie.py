@@ -3,7 +3,7 @@ Testgevallen voor de regressietest (test_reference.py) en het opnieuw maken van 
 
 De gevallen zijn het demotraject en de stukken normtraject in ``test/test_input/<geval>`` (zie de README daar).
 Per geval staat de referentie in ``test/test_output/<geval>``. De AHN-hoogtes van het demotraject komen uit
-de meegeleverde strook; die van de andere gevallen uit de AHN5-tiffs in ``AHN_TEST_DIR`` (standaard
+de meegeleverde strook; die van de andere gevallen uit de AHN5-tiffs in ``AHN_TEST_DIR/AHN5/DTM05`` (standaard
 ``ahn_data`` in de ontwikkelmap, de downloadmap van de app). Er wordt nooit gedownload en er is geen terugval op AHN4.
 
 Referentie opnieuw maken (na een bedoelde wijziging), in de geactiveerde omgeving vanuit de ontwikkelmap::
@@ -52,7 +52,7 @@ FILES = ("buitenlijn.shp", "cross_points.shp", "cross_lines.shp", "cross_lines_a
 
 def ahn_dir(name):
     """Map met de AHN5-tiffs voor een geval: de meegeleverde strook voor de demo, anders `AHN_DIR`."""
-    return str(DEMO_DIR / "invoer") if name == "demo" else AHN_DIR
+    return str(DEMO_DIR / "invoer" / "AHN") if name == "demo" else AHN_DIR
 
 
 def outside_line(name, out):
@@ -86,7 +86,7 @@ def local_tiles(folder, cross_lines):
         lines = [shapely.geometry.shape(row.geometry) for row in source]
     for name in tiles.sheet_names(lines):
         url = tiles.sheets[name][1].get(5)
-        path = url and tiles._local_file(ahn.tif_name(url))
+        path = url and tiles._local_file(ahn.tif_name(url), 5)
         if not path:
             return None
         tiles._files[name] = path  # Geen downloads of terugval op AHN4

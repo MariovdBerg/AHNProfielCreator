@@ -15,8 +15,9 @@ In `invoer`:
 - Geen buitenlijn: de app leidt die af (`outside_offset = 20`, `outside_side = links`). De Lek
   (buitenzijde) ligt links van de tekenrichting, dus de dijkvakken 20 m naar links verschoven geeft de
   buitenlijn, als `buitenlijn_offset.shp` in de uitvoermap.
-- `2023_M_39AZ1_demo.tif`: AHN5 DTM 0,5 m van kaartblad 39AZ1, uitgeknipt tot 100 m rond de dijkvakken
-  (daarbuiten nodata), zelfde grid als het blad. De app vindt het via de bladnaam, zodat de demo zonder
+- `AHN/AHN5/DTM05/2023_M_39AZ1_demo.tif`: AHN5 DTM 0,5 m van kaartblad 39AZ1, uitgeknipt tot 100 m rond de
+  dijkvakken (daarbuiten nodata), zelfde grid als het blad. De AHN-map is `AHN` (`ahn_file_loc = AHN`), met de
+  opbouw `AHN<versie>/<product>`. De app vindt het blad via de bladnaam, zodat de demo zonder
   download werkt bij dwarslijnen tot 200 m. Bron: AHN, CC BY 4.0.
 
 Waarom dit stuk:

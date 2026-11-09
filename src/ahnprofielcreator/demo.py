@@ -6,7 +6,7 @@ Er is geen buitenlijn meegeleverd: die wordt afgeleid door de dijkvakken 20 m na
 Het is het project ``demo`` in de werkmap (de map met ``src``): de invoer in ``demo/invoer``, de uitvoer in
 ``demo/uitvoer`` en de instellingen in ``demo/config.ini``. De AHN5-hoogtes (DTM 0,5 m) staan in een
 uitgeknipte strook van 100 m aan weerszijden van de dijk, met de naam van het kaartblad
-(``2023_M_39AZ1_demo.tif``). De demo werkt daardoor zonder downloads, zolang de dwarslijnen niet langer zijn
+(``invoer/AHN/AHN5/DTM05/2023_M_39AZ1_demo.tif``; de AHN-map is ``invoer/AHN``). De demo werkt daardoor zonder downloads, zolang de dwarslijnen niet langer zijn
 dan 200 m. Bron AHN: CC BY 4.0, AHN.
 """
 

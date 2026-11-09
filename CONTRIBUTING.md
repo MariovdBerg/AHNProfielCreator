@@ -40,8 +40,8 @@ de andere gevallen hebben de AHN5-tiffs (DTM 0,5 m) nodig en draaien alleen op v
 pytest -m ahn
 ```
 
-De tiffs worden standaard gezocht in `ahn_data` in de ontwikkelmap (daar zet de app ook downloads neer); een
-andere map geef je op met de omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
+De tiffs worden standaard gezocht in `ahn_data/AHN5/DTM05` in de ontwikkelmap (daar zet de app ook downloads
+neer); een andere AHN-map (met daarin `AHN5/DTM05`) geef je op met de omgevingsvariabele `AHN_TEST_DIR`. Ontbreekt er een blad, dan wordt de test overgeslagen.
 
 ## Referentie opnieuw maken
 

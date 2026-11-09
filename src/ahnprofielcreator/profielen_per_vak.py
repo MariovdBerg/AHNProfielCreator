@@ -42,7 +42,7 @@ class Settings:
     projectmap: str
     # Shapefile met dijkvak lijnen (bevat attribuut `group_id`)
     input_line: str
-    # Map met lokale AHN tiffs
+    # AHN-map met per versie en product een map met lokale tiffs, bijv. <ahn_file_loc>/AHN5/DTM05
     ahn_file_loc: str
     # Shapefile met buitenlijn, bepaalt de oriëntatie van de dwarslijnen (optioneel)
     input_line_outside: Optional[str] = None
@@ -436,7 +436,8 @@ CONFIG_LAYOUT = (
     (
         "AHN",
         {
-            "ahn_file_loc": "Map met lokale AHN-tiffs (bijv. D:\\AHN\\AHN5\\DTM05); . = de map invoer",
+            "ahn_file_loc": "AHN-map met een map per versie en product met de tiffs, bijv. D:\\AHN met "
+            "D:\\AHN\\AHN5\\DTM05; versiemappen AHN1 - AHN6, productmappen DSM05, DSM5, DTM05, DTM5",
             "ahn_file_downloaded": "Map voor gedownloade kaartbladen (~200 MB per blad bij 0,5 m), ook hier wordt gezocht; "
             f"..\\..\\{DOWNLOAD_DIR} = {DOWNLOAD_DIR} in de werkmap, gedeeld door alle projecten",
             "ahn_index": "Kaartbladen met downloadlinks (.gpkg/.shp); leeg = de meegeleverde bladwijzer.gpkg",
@@ -542,7 +543,7 @@ def parse_args(argv=None):
     parser.add_argument("--group-id", help="attribuut in shape om te groeperen (standaard: vak_id)")
     parser.add_argument("--ahn-index", help="AHN kaartbladen met downloadlinks (standaard: bladwijzer.gpkg)")
     parser.add_argument("--ahn-index-id", help="attribuut met bladnaam in de kaartbladen (standaard: AHN)")
-    parser.add_argument("--ahn-file-loc", help="map met de AHN tiff-files")
+    parser.add_argument("--ahn-file-loc", help="AHN-map met submappen AHN<versie>/<product>, bijv. AHN5/DTM05, met de tiffs")
     parser.add_argument(
         "--ahn-file-downloaded", help="map voor gedownloade AHN-bladen (standaard: ahn_data in de werkmap)"
     )

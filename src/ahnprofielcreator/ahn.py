@@ -4,9 +4,14 @@ AHN-kaartbladen zoeken, lokaal vinden en zo nodig downloaden.
 
 De kaartbladindex is de bladwijzer van AHN (``bladwijzer.gpkg``, bladen van 5 x 6,25 km). Die
 heeft per blad een downloadlink per AHN-versie en product, bijv. veld ``AHN5_05M_M`` voor AHN5
-DTM 0,5 m. Per blad wordt eerst lokaal gezocht naar de tiff met de naam uit de link (in de map met AHN
-tiffs en de downloadmap), anders wordt die gedownload naar de downloadmap. Heeft een blad geen (werkende) link voor de gevraagde versie, dan valt het terug
-op AHN4, dat heel Nederland dekt.
+DTM 0,5 m. Per blad wordt eerst lokaal gezocht naar de tiff met de naam uit de link (in de AHN-map en de
+downloadmap), anders wordt die gedownload naar de downloadmap. Heeft een blad geen (werkende) link voor de
+gevraagde versie, dan valt het terug op AHN4, dat heel Nederland dekt.
+
+De AHN-map en de downloadmap hebben een map per AHN-versie met daarin een map per product, bijv.
+``<AHN-map>/AHN5/DTM05/2023_M_01CZ1.TIF`` en ``<AHN-map>/AHN4/DTM05/M_01CZ1.TIF``. AHN3 en AHN4 gebruiken
+dezelfde bestandsnamen; door de versie in het pad raken die niet door elkaar. `check_folder` controleert
+die opbouw.
 
 AHN6 gebruikt bladen van 1 x 1 km (``bladwijzer_AHN6.gpkg``) en wordt alleen gemeld als het langs
 het traject beschikbaar is.
@@ -39,6 +44,14 @@ TIMEOUT = 60  # [s]
 
 MODELS = {"DTM": "M", "DSM": "R"}  # Letter in de veld- en bestandsnamen
 RESOLUTIONS = {0.5: "05M", 5.0: "5M"}
+VERSIONS = tuple(range(1, 7))  # Versiemappen AHN1 t/m AHN6 in een AHN-map
+PRODUCT_DIRS = {  # Productmappen in een versiemap
+    ("DTM", 0.5): "DTM05",
+    ("DTM", 5.0): "DTM5",
+    ("DSM", 0.5): "DSM05",
+    ("DSM", 5.0): "DSM5",
+}
+TIF_EXTENSIONS = (".tif", ".tiff")
 AHN6_DIRS = {
     ("DTM", 0.5): "02a_DTM_50cm",
     ("DTM", 5.0): "02b_DTM_5m",
@@ -67,6 +80,92 @@ def index_field(version, model, resolution):
     if version == 2 and model == "DTM" and res == "05M":
         return "AHN2_05M_I"  # Geïnterpoleerd; AHN2_05M_N is niet geïnterpoleerd
     return f"AHN{version}_{res}_{MODELS[model]}"
+
+
+def product_dir_name(model, resolution):
+    """Naam van de productmap in een versiemap: DTM05, DTM5, DSM05 of DSM5."""
+    return PRODUCT_DIRS[check_product(model, resolution)]
+
+
+def _subfolder(folder, name):
+    """Submap `name` van `folder`; hoofd-/kleine letters maken niet uit (ahn5 = AHN5), ook niet buiten Windows."""
+    if os.path.isdir(folder):
+        for entry in os.listdir(folder):
+            if entry.lower() == name.lower() and os.path.isdir(os.path.join(folder, entry)):
+                return os.path.join(folder, entry)
+    return os.path.join(folder, name)
+
+
+def product_folder(root, version, model, resolution):
+    """Map met de tiffs van één AHN-versie en product in een AHN-map, bijv. <root>/AHN5/DTM05."""
+    return _subfolder(_subfolder(root, f"AHN{int(version)}"), product_dir_name(model, resolution))
+
+
+def _is_tif(name):
+    return name.lower().endswith(TIF_EXTENSIONS)
+
+
+def _listing(names, limit=5):
+    """Opsomming van (hooguit `limit`) namen voor een foutmelding."""
+    text = ", ".join(names[:limit])
+    return text + (f" en nog {len(names) - limit}" if len(names) > limit else "")
+
+
+def check_folder(root, label="AHN-map"):
+    """
+    Controleer de opbouw van een AHN-map; geeft een ValueError die de verwachte opbouw uitlegt.
+
+    In de AHN-map staan alleen versiemappen (AHN1 t/m AHN6) en daarin alleen productmappen (DSM05, DSM5,
+    DTM05, DTM5) met de tiffs. Zo raken tiffs van verschillende versies met dezelfde naam (AHN3 en AHN4,
+    bijv. M_01CZ1.TIF) niet door elkaar. Losse tiffs of andere mappen op die niveaus zijn een fout; andere
+    bestanden (bijv. een leesmij) mogen. Hoofd-/kleine letters maken niet uit.
+    """
+    if not os.path.isdir(root):
+        raise FileNotFoundError(f"{label} '{root}' bestaat niet")
+    version_names = {f"ahn{v}" for v in VERSIONS}
+    product_names = {name.lower() for name in PRODUCT_DIRS.values()}
+    problems = []
+
+    def check_level(folder, allowed, expected):
+        """Controleer één niveau; geeft de goede submappen terug."""
+        good, wrong, tifs = [], [], []
+        for entry in sorted(os.listdir(folder)):
+            path = os.path.join(folder, entry)
+            if os.path.isdir(path):
+                (good if entry.lower() in allowed else wrong).append(entry)
+            elif _is_tif(entry):
+                tifs.append(entry)
+        rel = os.path.relpath(folder, root)
+        where = "direct in de map" if rel == "." else f"direct in {rel}"
+        if tifs:
+            problems.append(f"tiffs {where} ({_listing(tifs)})")
+        if wrong:
+            problems.append(f"onbekende mappen {where} ({_listing(wrong)}; verwacht {expected})")
+        return good
+
+    for version_dir in check_level(root, version_names, "AHN1 t/m AHN6"):
+        check_level(os.path.join(root, version_dir), product_names, "DSM05, DSM5, DTM05 of DTM5")
+    if not problems:
+        return
+
+    # Wijst de map naar een versie- of productmap (de oude opbouw)? Noem dan de map met alle versies.
+    path = os.path.abspath(root)
+    if os.path.basename(path).lower() in product_names:
+        path = os.path.dirname(path)
+    suggestion = os.path.dirname(path) if os.path.basename(path).lower() in version_names else None
+    example = os.path.join(suggestion or root, "AHN5", "DTM05", "2023_M_01CZ1.TIF")
+    message = (
+        f"{label} '{root}' heeft niet de verwachte opbouw: {'; '.join(problems)}. "
+        "Verwacht: een map per AHN-versie (AHN1 t/m AHN6) met daarin een map per product (DSM05, DSM5, DTM05, "
+        f"DTM5) met de tiffs, bijv. '{example}'. Zo raken tiffs van verschillende AHN-versies met dezelfde naam "
+        "(zoals AHN3 en AHN4) niet door elkaar."
+    )
+    if suggestion:
+        message += (
+            " Deze map lijkt zelf een versie- of productmap; kies de map met de versiemappen, "
+            f"hier waarschijnlijk '{suggestion}'."
+        )
+    raise ValueError(message)
 
 
 def tif_name(url):
@@ -125,9 +224,14 @@ class AHNTiles:
         ahn6_index=AHN6_INDEX,
         logger=None,
     ):
+        # AHN-map met per versie en product een map met tiffs (zie `check_folder`); leeg = geen lokale tiffs.
         self.folder = folder
-        # Downloads apart houden, bijv. als `folder` alleen-lezen is; standaard `folder` zelf.
+        # Downloads apart houden, bijv. als `folder` alleen-lezen is; standaard `folder` zelf. Zelfde opbouw.
         self.download_folder = download_folder or folder
+        if folder:
+            check_folder(folder, "AHN-map (ahn_file_loc)")
+        if self.download_folder and self.download_folder != folder and os.path.isdir(self.download_folder):
+            check_folder(self.download_folder, "AHN-downloadmap (ahn_file_downloaded)")
         self.index = index
         self.index_id = index_id
         self.model, self.resolution = check_product(model, resolution)
@@ -141,13 +245,17 @@ class AHNTiles:
         self.fields = {v: index_field(v, self.model, self.resolution) for v in versions}
 
         self.sheets = {}  # bladnaam -> (voorbereide geometrie, {versie: url})
-        self._local = None  # kleine-letter stam -> pad, pas bij eerste gebruik
+        self._local = {}  # versie -> {kleine-letter stam -> pad}, per versie pas bij eerste gebruik
         self._files = {}
         self._read_index()
 
     @property
     def product(self):
         return f"{self.model} {self.resolution:g} m"
+
+    def product_folder(self, root, version):
+        """Map met de tiffs van `version` en het gekozen product in AHN-map `root`, bijv. <root>/AHN5/DTM05."""
+        return product_folder(root, version, self.model, self.resolution)
 
     def _read_index(self):
         if not os.path.isfile(self.index):
@@ -192,7 +300,7 @@ class AHNTiles:
             url = urls.get(version)
             if not url:
                 continue
-            path = self._local_file(tif_name(url)) or self._download(url)
+            path = self._local_file(tif_name(url), version) or self._download(url, version)
             if path is None:
                 continue
             if version != self.version:
@@ -202,31 +310,44 @@ class AHNTiles:
         self.logger.warning(f"Blad {name}: geen AHN {self.product} beschikbaar (lokaal of als download).")
         return None
 
-    def _local_file(self, name):
-        """Lokale tiff bij de naam uit de downloadlink; een extra achtervoegsel mag (M_01CZ1_DEFLATE.tif)."""
-        if self._local is None:
-            self._local = {}
-            # Bij dezelfde naam wint de map met AHN tiffs van de downloadmap.
-            for folder in (self.download_folder, self.folder):
+    def _local_files(self, version):
+        """Lokale tiffs van een AHN-versie (kleine-letter stam -> pad) in de AHN-map en de downloadmap."""
+        if version not in self._local:
+            files = {}
+            # Bij dezelfde naam wint de AHN-map van de downloadmap.
+            for root in (self.download_folder, self.folder):
+                if not root:
+                    continue
+                folder = self.product_folder(root, version)
                 if not os.path.isdir(folder):
                     continue
                 for file in os.listdir(folder):
                     path = os.path.join(folder, file)
-                    if file.lower().endswith((".tif", ".tiff")) and os.path.isfile(path):
-                        self._local[_stem(file)] = path
+                    if _is_tif(file) and os.path.isfile(path):
+                        files[_stem(file)] = path
+            self._local[version] = files
+        return self._local[version]
 
+    def _local_file(self, name, version):
+        """
+        Lokale tiff van `version` bij de naam uit de downloadlink; een extra achtervoegsel mag
+        (M_01CZ1_DEFLATE.tif).
+        """
+        files = self._local_files(version)
         stem = _stem(name)
-        if stem in self._local:
-            return self._local[stem]
-        for local_stem, path in self._local.items():
+        if stem in files:
+            return files[stem]
+        for local_stem, path in files.items():
             if local_stem.startswith(stem + "_"):
                 return path
         return None
 
-    def _download(self, url):
-        os.makedirs(self.download_folder, exist_ok=True)
+    def _download(self, url, version):
+        """Download het blad van `version` naar <downloadmap>/AHN<versie>/<product>; geeft het pad of None."""
+        folder = self.product_folder(self.download_folder, version)
+        os.makedirs(folder, exist_ok=True)
         name = os.path.basename(urllib.parse.urlparse(url).path)
-        part = os.path.join(self.download_folder, name + ".part")
+        part = os.path.join(folder, name + ".part")
         try:
             with urlopen(url) as response, open(part, "wb") as f:
                 size = int(response.headers.get("Content-Length") or 0)
@@ -236,9 +357,9 @@ class AHNTiles:
                         f.write(chunk)
                         pbar.update(len(chunk))
             if name.lower().endswith(".zip"):
-                path = self._unzip(part)
+                path = self._unzip(part, folder)
             else:
-                path = os.path.join(self.download_folder, name)
+                path = os.path.join(folder, name)
                 os.replace(part, path)
         except urllib.error.HTTPError as e:
             self.logger.info(f"Niet beschikbaar: {url} (HTTP {e.code})")
@@ -250,17 +371,17 @@ class AHNTiles:
             if os.path.exists(part):
                 os.remove(part)
 
-        if self._local is not None:  # Anders komt het bestand vanzelf in de index als die gemaakt wordt
-            self._local[_stem(os.path.basename(path))] = path
+        if version in self._local:  # Anders komt het bestand vanzelf in de index als die gemaakt wordt
+            self._local[version][_stem(os.path.basename(path))] = path
         return path
 
-    def _unzip(self, zip_path):
+    def _unzip(self, zip_path, folder):
         with zipfile.ZipFile(zip_path) as z:
-            members = [m for m in z.namelist() if m.lower().endswith((".tif", ".tiff"))]
+            members = [m for m in z.namelist() if _is_tif(m)]
             if len(members) != 1:
                 raise OSError(f"verwacht één tiff in de zip, gevonden: {len(members)}")
             # Alleen de bestandsnaam gebruiken, nooit mappen uit de zip.
-            path = os.path.join(self.download_folder, os.path.basename(members[0]))
+            path = os.path.join(folder, os.path.basename(members[0]))
             with z.open(members[0]) as src, open(path + ".part", "wb") as dst:
                 shutil.copyfileobj(src, dst)
         os.replace(path + ".part", path)

@@ -135,10 +135,10 @@ uitvoer en de instellingen:
 
 ```text
 <werkmap>\
-├─ ahn_data\            gedownloade AHN-bladen, gedeeld door alle projecten
+├─ ahn_data\            gedownloade AHN-bladen (per versie en product), gedeeld door alle projecten
 ├─ demo\                het meegeleverde demotraject
 │  ├─ config.ini        instellingen van het project
-│  ├─ invoer\           dijkvakken, (eventueel) buitenlijn en lokale AHN-tiffs
+│  ├─ invoer\           dijkvakken, (eventueel) buitenlijn en lokale AHN-tiffs (in AHN\AHN5\DTM05)
 │  └─ uitvoer\          resultaat van de berekening en de schematisatie
 └─ <eigen project>\
    ├─ config.ini
@@ -152,8 +152,8 @@ uitvoer en de instellingen:
 - **Projectmap:** de map van het project, met de mappen `invoer` en `uitvoer`. Niet te verwarren met de
   git-projectmap waarin ontwikkeld wordt.
 - **Invoer:** relatieve paden in de instellingen gelden ten opzichte van `invoer`, bijv.
-  `input_line = dijkvakken.shp` of `ahn_file_loc = .` (de tiffs staan in `invoer` zelf). Absolute paden
-  (bijv. `D:\AHN\AHN5\DTM05`) werken ook.
+  `input_line = dijkvakken.shp` of `ahn_file_loc = AHN` (de AHN-map is `invoer\AHN`). Absolute paden
+  (bijv. `D:\AHN`) werken ook.
 - **Uitvoer:** alles komt in `uitvoer`. Een nieuwe berekening overschrijft de vorige, ook met een ander interval.
 
 ## Invoer
@@ -212,10 +212,11 @@ punten in rood.
 
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app zelf.
 
-1. **Map met AHN-tiffs** (`ahn_file_loc`): hier zoekt de app de tiffs, bijv.
-   `D:\AHN\AHN5\DTM05`.
+1. **AHN-map** (`ahn_file_loc`): hier zoekt de app de tiffs, bijv. `D:\AHN`. De AHN-map heeft een vaste
+   opbouw (zie hieronder).
 2. **Map voor downloads** (`ahn_file_downloaded`, optioneel): hier komen gedownloade bladen en hier wordt ook
-   gezocht. Leeg = `ahn_data` in de werkmap, zodat alle projecten dezelfde downloads gebruiken.
+   gezocht, met dezelfde opbouw. Leeg = `ahn_data` in de werkmap, zodat alle projecten dezelfde downloads
+   gebruiken.
 3. **Kaartbladindex** (`ahn_index`, standaard de meegeleverde `bladwijzer.gpkg` in `src/ahnprofielcreator/data`):
    de bladwijzer van AHN met de kaartbladen van 5 × 6,25 km en per blad downloadlinks per AHN-versie en product
    ([bron](https://basisdata.nl/hwh-ahn/AUX/bladwijzer.gpkg), [kaart](https://basisdata.nl/hwh-ahn/AUX/bladwijzer/index.html)).
@@ -232,7 +233,7 @@ Welke AHN-data gebruikt wordt, kies je zelf:
 
 De werkwijze per kaartblad dat de dwarslijnen raakt:
 
-1. Zoek in `ahn_file_loc` en `ahn_file_downloaded` de tiff met de naam uit de downloadlink,
+1. Zoek in `AHN<versie>\<product>` van `ahn_file_loc` en `ahn_file_downloaded` de tiff met de naam uit de downloadlink,
    bijv. `2023_M_01CZ1.TIF` (AHN5) of `M_01CZ1.TIF` (AHN4, uit `M_01CZ1.zip`).
    Hoofd-/kleine letters maken niet uit en een extra achtervoegsel mag, zodat ook `M_01CZ1_DEFLATE.tif` gevonden wordt.
 2. Niet gevonden: download het blad naar `ahn_file_downloaded` (AHN4-zips worden uitgepakt). Bij 0,5 m is dat
@@ -247,8 +248,28 @@ staat dat als waarschuwing in de log. Dat kan water zijn, maar ook een AHN5-blad
 ingewonnen is (bijv. 40BZ2: het blad bestaat, maar bevat 0,1% data ten tijde van ontwikkeling).
 De app valt dan niet terug op AHN4; kies zo nodig zelf `ahn_versie = 4`.
 
+**Opbouw van de AHN-map.** Per AHN-versie een map (`AHN1` t/m `AHN6`) en daarin per product een map:
+`DTM05`, `DTM5`, `DSM05` of `DSM5` (DTM/DSM, 0,5 m/5 m). De tiffs staan in de productmap:
+
+```text
+D:\AHN\                      ahn_file_loc = D:\AHN
+├─ AHN4\
+│  └─ DTM05\M_01CZ1.TIF
+└─ AHN5\
+   ├─ DTM05\2023_M_01CZ1.TIF
+   └─ DSM5\...
+```
+
+De app kiest zelf de map bij `ahn_versie`, `model` en `model_resolutie`; bij terugval op AHN4 zoekt hij in
+`AHN4\<product>`. Zo raken tiffs van AHN3 en AHN4, die dezelfde bestandsnamen hebben, niet door elkaar.
+Bij de start controleert de app de opbouw van de AHN-map en de downloadmap en stopt met een foutmelding bij
+losse tiffs direct in de map of in een versiemap, of bij andere mappen dan deze versie- en productmappen (andere
+bestanden, bijv. een leesmij, mogen). Wijst `ahn_file_loc` nog naar een productmap zoals `D:\AHN\AHN5\DTM05`
+(de opbouw van vóór deze controle), dan noemt de melding de map die het moet zijn. Gedownloade bladen uit een
+oudere versie van de app staan los in `ahn_data`: verplaats ze naar de juiste `AHN<versie>\<product>`-map of
+verwijder ze (ze worden dan opnieuw gedownload).
+
 **Let op:**
-- Zet tiffs van AHN3 en AHN4 niet in dezelfde map: die hebben dezelfde bestandsnamen.
 - AHN6 gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg` (ook
   meegeleverd, de AHN6-bladindeling van [AHN](https://www.ahn.nl)) controleert de app wel of AHN6 langs het traject al te downloaden is en meldt dat in de log;
   voor de berekening gebruikt de app AHN6 (nog) niet.
@@ -284,7 +305,7 @@ haal `cur_dir` weg.
 | `input_line_outside` | leeg | shapefile met de buitenlijn |
 | `outside_offset` | leeg (= niet afleiden) | [m] zonder buitenlijn: leid die af door de dijkvakken zoveel te verschuiven |
 | `outside_side` | `links` | kant van de afgeleide buitenlijn t.o.v. de tekenrichting: `links` of `rechts` |
-| `ahn_file_loc` | (verplicht) | map met lokale AHN-tiffs (`.` = de map `invoer`) |
+| `ahn_file_loc` | (verplicht) | AHN-map met `AHN<versie>\<product>`-mappen met lokale tiffs |
 | `ahn_file_downloaded` | leeg (= `<werkmap>\ahn_data`) | map voor gedownloade bladen |
 | `ahn_versie`, `model`, `model_resolutie` | `5`, `DTM`, `0.5` | welke AHN-data; zie [AHN-data](#ahn-data) |
 | `ahn_index`, `ahn_index_id` | `bladwijzer.gpkg`, `AHN` | kaartbladindex met downloadlinks |
@@ -390,7 +411,7 @@ settings = Settings(
     input_line_outside="buitenlijn.shp",  # of: None en outside_offset=20 om de buitenlijn af te leiden
     outside_side="links",
     group_id="vak_id",
-    ahn_file_loc=r"D:\AHN\AHN5\DTM05",  # lokale tiffs
+    ahn_file_loc=r"D:\AHN",  # AHN-map met lokale tiffs in AHN5\DTM05 enz.
     ahn_file_downloaded=None,  # map voor downloads; None = <werkmap>\ahn_data
     ahn_versie=5,  # standaard; terugval op AHN4
     model="DTM",

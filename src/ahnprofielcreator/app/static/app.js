@@ -8,7 +8,7 @@ const LABELS = {
   outside_offset: "Of: buitenlijn afleiden, afstand [m]",
   outside_side: "Kant afgeleide buitenlijn",
   ahn_index: "AHN bladen (.gpkg/.shp)",
-  ahn_file_loc: "AHN .TIF-bestanden (map)",
+  ahn_file_loc: "AHN-map (AHN<versie>\\<product>)",
   ahn_file_downloaded: "AHN downloadmap",
   ahn_index_id: "Attribuut bladnaam",
   ahn_versie: "AHN versie (terugval op 4)",

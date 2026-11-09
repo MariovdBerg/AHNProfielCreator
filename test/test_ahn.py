@@ -45,21 +45,104 @@ def test_check_product_errors():
         ahn.check_product("DTM", 1)
 
 
+# ---------- Opbouw van de AHN-map ----------
+
+
+def make_files(root, *paths):
+    """Maak lege bestanden (en de mappen ervoor) onder `root`."""
+    for path in paths:
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_bytes(b"")
+    return root
+
+
+def test_product_folder(tmp_path):
+    assert ahn.product_dir_name("dsm", 5) == "DSM5"
+    assert ahn.product_folder(str(tmp_path), 5, "DTM", 0.5) == str(tmp_path / "AHN5" / "DTM05")
+    make_files(tmp_path, "ahn4/dtm05/M_01CZ1.TIF")  # Hoofd-/kleine letters maken niet uit
+    assert ahn.product_folder(str(tmp_path), 4, "DTM", 0.5) == str(tmp_path / "ahn4" / "dtm05")
+
+
+def test_check_folder_ok(tmp_path):
+    make_files(
+        tmp_path, "leesmij.txt", "AHN4/DTM05/M_01CZ1.TIF", "ahn5/dsm5/2023_R5_01CZ1.TIF", "AHN5/DTM05/leesmij.txt"
+    )
+    (tmp_path / "AHN6" / "DTM5").mkdir(parents=True)
+    ahn.check_folder(str(tmp_path))  # Geen fout
+
+
+@pytest.mark.parametrize(
+    "paths, text",
+    [
+        (["M_01CZ1.TIF"], "tiffs direct in de map (M_01CZ1.TIF)"),
+        (["AHN4/M_01CZ1.tif"], "tiffs direct in AHN4 (M_01CZ1.tif)"),
+        (["oud/M_01CZ1.TIF"], "onbekende mappen direct in de map (oud; verwacht AHN1 t/m AHN6)"),
+        (["AHN7/DTM05/x.TIF"], "onbekende mappen direct in de map (AHN7;"),
+        (["AHN5/DTM_05/x.TIF"], "onbekende mappen direct in AHN5 (DTM_05; verwacht DSM05, DSM5, DTM05 of DTM5)"),
+    ],
+)
+def test_check_folder_errors(tmp_path, paths, text):
+    make_files(tmp_path, *paths)
+    with pytest.raises(ValueError, match="heeft niet de verwachte opbouw") as error:
+        ahn.check_folder(str(tmp_path), "AHN-map (ahn_file_loc)")
+    message = str(error.value)
+    assert text in message
+    assert message.startswith(f"AHN-map (ahn_file_loc) '{tmp_path}'")
+    assert "AHN1 t/m AHN6" in message and "DSM05, DSM5, DTM05, DTM5" in message
+
+
+def test_check_folder_lists_at_most_five(tmp_path):
+    make_files(tmp_path, *[f"{i}.tif" for i in range(7)])
+    with pytest.raises(ValueError, match=re.escape("(0.tif, 1.tif, 2.tif, 3.tif, 4.tif en nog 2)")):
+        ahn.check_folder(str(tmp_path))
+
+
+@pytest.mark.parametrize("sub", ["AHN5/DTM05", "AHN5"])
+def test_check_folder_names_root_for_old_layout(tmp_path, sub):
+    # Oude opbouw: ahn_file_loc wees naar de productmap (of een versiemap) zelf.
+    make_files(tmp_path, "AHN5/DTM05/2023_M_01CZ1.TIF")
+    with pytest.raises(ValueError, match=re.escape(f"hier waarschijnlijk '{tmp_path}'")) as error:
+        ahn.check_folder(str(tmp_path / sub))
+    assert f"bijv. '{tmp_path / 'AHN5' / 'DTM05' / '2023_M_01CZ1.TIF'}'" in str(error.value)
+
+
+def test_check_folder_missing(tmp_path):
+    with pytest.raises(FileNotFoundError, match="bestaat niet"):
+        ahn.check_folder(str(tmp_path / "geen"))
+
+
+def test_tiles_check_folders(tmp_path):
+    make_files(tmp_path, "ahn/M_01CZ1.TIF", "downloads/M_01CZ2.TIF", "goed/AHN4/DTM05/M_01CZ1.TIF")
+    with pytest.raises(ValueError, match=re.escape("AHN-map (ahn_file_loc)")):
+        ahn.AHNTiles(str(tmp_path / "ahn"))
+    with pytest.raises(ValueError, match=re.escape("AHN-downloadmap (ahn_file_downloaded)")):
+        ahn.AHNTiles(str(tmp_path / "goed"), download_folder=str(tmp_path / "downloads"))
+    with pytest.raises(FileNotFoundError):
+        ahn.AHNTiles(str(tmp_path / "geen"))
+    # Een downloadmap die nog niet bestaat, mag: die wordt bij de eerste download gemaakt.
+    ahn.AHNTiles(str(tmp_path / "goed"), download_folder=str(tmp_path / "nieuw"))
+
+
+# ---------- Lokaal zoeken ----------
+
+
 @pytest.fixture
 def tiles(tmp_path):
     folder, downloads = tmp_path / "ahn", tmp_path / "downloads"
-    folder.mkdir()
-    downloads.mkdir()
-    for path in (folder / "M_01CZ1_DEFLATE.tif", folder / "2023_M_01CZ2.TIF", downloads / "2023_m_01cz2.tif"):
-        path.write_bytes(b"")
+    make_files(folder, "AHN4/DTM05/M_01CZ1_DEFLATE.tif", "AHN5/DTM05/2023_M_01CZ2.TIF")
+    make_files(downloads, "AHN5/DTM05/2023_m_01cz2.tif")
     return ahn.AHNTiles(str(folder), download_folder=str(downloads)), folder
 
 
 def test_local_file(tiles):
     t, folder = tiles
-    assert t._local_file("M_01CZ1.TIF") == str(folder / "M_01CZ1_DEFLATE.tif")  # Extra achtervoegsel mag
-    assert t._local_file("2023_M_01CZ2.TIF") == str(folder / "2023_M_01CZ2.TIF")  # Map met tiffs wint
-    assert t._local_file("2023_M_01CZ3.TIF") is None
+    ahn4, ahn5 = folder / "AHN4" / "DTM05", folder / "AHN5" / "DTM05"
+    assert t._local_file("M_01CZ1.TIF", 4) == str(ahn4 / "M_01CZ1_DEFLATE.tif")  # Extra achtervoegsel mag
+    assert t._local_file("2023_M_01CZ2.TIF", 5) == str(ahn5 / "2023_M_01CZ2.TIF")  # AHN-map wint
+    assert t._local_file("2023_M_01CZ3.TIF", 5) is None
+    # Alleen in de map van de versie: AHN3 heeft dezelfde bestandsnamen als AHN4.
+    assert t._local_file("M_01CZ1.TIF", 3) is None
+    assert t._local_file("M_01CZ1.TIF", 5) is None
 
 
 def test_sheet_names_and_fallback(tiles, monkeypatch):
@@ -68,7 +151,7 @@ def test_sheet_names_and_fallback(tiles, monkeypatch):
     names = t.sheet_names([line])
     assert names
     # Geen lokale tiff en downloaden mislukt: geen bestand, geen exception.
-    monkeypatch.setattr(t, "_download", lambda url: None)
+    monkeypatch.setattr(t, "_download", lambda url, version: None)
     assert t.file(names[0]) is None
 
 
@@ -122,21 +205,24 @@ def test_download_tif(tiles, web, tmp_path):
     t, _ = tiles
     url = "https://x/AHN5/2023_M_99AA1.TIF"
     web.pages[url] = b"tiff"
-    path = t._download(url)
-    assert path == str(tmp_path / "downloads" / "2023_M_99AA1.TIF")
+    path = t._download(url, 5)
+    folder = tmp_path / "downloads" / "AHN5" / "DTM05"
+    assert path == str(folder / "2023_M_99AA1.TIF")
     assert open(path, "rb").read() == b"tiff"
-    assert "2023_M_99AA1.TIF" in files(tmp_path / "downloads") and not any(f.endswith(".part") for f in files(tmp_path / "downloads"))
-    assert t._local_file("2023_M_99AA1.TIF") == path  # Daarna lokaal gevonden
+    assert files(folder) == ["2023_M_99AA1.TIF", "2023_m_01cz2.tif"]  # Geen .part over
+    assert t._local_file("2023_M_99AA1.TIF", 5) == path  # Daarna lokaal gevonden
 
 
 def test_download_zip_is_unpacked(tiles, web, tmp_path):
     t, _ = tiles
     url = "https://x/AHN4/M_99AA1.zip"
     web.pages[url] = zip_bytes({"map/M_99AA1.TIF": b"tiff", "M_99AA1.tfw": b"x"})
-    path = t._download(url)
-    assert path == str(tmp_path / "downloads" / "M_99AA1.TIF")  # Alleen de bestandsnaam, nooit mappen uit de zip
+    path = t._download(url, 4)
+    folder = tmp_path / "downloads" / "AHN4" / "DTM05"
+    assert path == str(folder / "M_99AA1.TIF")  # Alleen de bestandsnaam, nooit mappen uit de zip
     assert open(path, "rb").read() == b"tiff"
-    assert files(tmp_path / "downloads") == ["2023_m_01cz2.tif", "M_99AA1.TIF"]  # Geen zip of .part over
+    assert files(folder) == ["M_99AA1.TIF"]  # Geen zip of .part over
+    assert files(tmp_path / "downloads") == ["AHN4", "AHN5"]
 
 
 @pytest.mark.parametrize(
@@ -152,9 +238,9 @@ def test_download_failures(tiles, web, tmp_path, logs, page, level_text):
     t, _ = tiles
     url = "https://x/AHN4/M_99AA1.zip"
     web.pages[url] = page
-    assert t._download(url) is None
+    assert t._download(url, 4) is None
     assert any(level_text in m for m in logs())
-    assert files(tmp_path / "downloads") == ["2023_m_01cz2.tif"]  # Niets achtergebleven
+    assert files(tmp_path / "downloads" / "AHN4" / "DTM05") == []  # Niets achtergebleven
 
 
 def test_fallback_to_ahn4(tiles, web, tmp_path, logs):
@@ -162,7 +248,7 @@ def test_fallback_to_ahn4(tiles, web, tmp_path, logs):
     url5, url4 = "https://x/AHN5/2023_M_99AA1.TIF", "https://x/AHN4/M_99AA1.zip"
     t.sheets["99AA1"] = (None, {5: url5, 4: url4})
     web.pages[url4] = zip_bytes({"M_99AA1.TIF": b"tiff"})
-    assert t.file("99AA1") == str(tmp_path / "downloads" / "M_99AA1.TIF")
+    assert t.file("99AA1") == str(tmp_path / "downloads" / "AHN4" / "DTM05" / "M_99AA1.TIF")
     assert web.requests == [url5, url4]
     assert any("geen AHN5, AHN4" in m for m in logs())
     t.file("99AA1")
@@ -173,10 +259,10 @@ def test_local_file_needs_no_download(tiles, web):
     t, folder = tiles
     t.sheets["01CZ1"] = (None, {5: "https://x/AHN5/2023_M_01CZ1.TIF", 4: "https://x/AHN4/M_01CZ1.zip"})
     t.sheets["01CZ2"] = (None, {5: "https://x/AHN5/2023_M_01CZ2.TIF"})
-    assert t.file("01CZ2") == str(folder / "2023_M_01CZ2.TIF")
+    assert t.file("01CZ2") == str(folder / "AHN5" / "DTM05" / "2023_M_01CZ2.TIF")
     assert web.requests == []
     # Geen AHN5 lokaal of online, wel AHN4 lokaal (M_01CZ1_DEFLATE.tif): alleen AHN5 wordt geprobeerd.
-    assert t.file("01CZ1") == str(folder / "M_01CZ1_DEFLATE.tif")
+    assert t.file("01CZ1") == str(folder / "AHN4" / "DTM05" / "M_01CZ1_DEFLATE.tif")
     assert web.requests == ["https://x/AHN5/2023_M_01CZ1.TIF"]
 
 
