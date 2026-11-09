@@ -4,7 +4,10 @@ rem
 rem Gebruik: dubbelklik, of sleep een werkmap of de config.ini van een project op dit bestand, of:
 rem     start_app.bat pad\naar\werkmap
 rem     start_app.bat pad\naar\werkmap\project\config.ini
-rem Zonder argument is de map van dit bestand de werkmap en opent het project demo.
+rem Zonder argument is de map van dit bestand (de repository) de werkmap en opent het project demo.
+rem
+rem Starten vanuit een eigen werkmap: zet daar een .bat met deze regel (pad naar deze repository):
+rem     @call "C:\pad\naar\AHNProfielCreator\start_app.bat" "%~dp0."
 setlocal
 
 rem ---- Instellingen ----------------------------------------------------------
@@ -45,6 +48,6 @@ echo.
 echo De conda-omgeving "%AHN_ENV%" bestaat niet of mist pakketten.
 echo Maak de omgeving aan met:
 echo     conda env create -f environment.yml
-echo of gebruik een bestaande omgeving: zet AHN_ENV bovenin dit bestand.
+echo of gebruik een bestaande omgeving: zet AHN_ENV bovenin het repo-bat bestand.
 pause
 exit /b 1

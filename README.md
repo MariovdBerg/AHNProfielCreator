@@ -303,18 +303,28 @@ het pakket is niet nodig: dubbelklik op `start_app.bat`. Dat activeert de conda-
 [demotraject](#snel-starten-demo)) geopend, en opent de browser op <http://127.0.0.1:8050/>. Stoppen: sluit
 het venster of druk Ctrl+C.
 
+**Starten vanuit een eigen werkmap.** Werk je met projecten buiten de repository, maak dan in die werkmap
+een eigen `.bat` dat naar `start_app.bat` in de repository verwijst:
+
+1. Maak in de werkmap (bijv. `D:\Projecten\Dijkversterking`) een tekstbestand `start_app.bat`.
+2. Zet er deze ene regel in, met het pad naar jouw checkout van de repository:
+
+   ```bat
+   @call "C:\MyPrograms\GitHub\AHNProfielCreator\start_app.bat" "%~dp0."
+   ```
+
+3. Dubbelklik erop. De app start met de map van dit `.bat`-bestand als werkmap en toont de projecten
+   daarin; de code komt uit de repository. Er is nog geen project geopend (tenzij de werkmap een map
+   `demo` heeft): kies er een onder *Project* of maak er een met *Nieuw project…*.
+
+`%~dp0.` is de map van het `.bat`-bestand, waar je het ook start. Een andere conda-omgeving kies je met
+een regel `set "AHN_ENV=naam"` boven de `@call`-regel. Gedownloade AHN-bladen komen in `ahn_data` in de werkmap.
+
+Verder:
+
 - **Ander project:** kies het in de app onder *Project*, of maak er een met *Nieuw project…* (maakt de mappen
   `invoer` en `uitvoer` en een volledige `config.ini` met de standaardwaarden). Of sleep de `config.ini` van een project op `start_app.bat`.
-- **Andere werkmap:** sleep de map op `start_app.bat`, of `start_app.bat pad\naar\werkmap`.
-- **Starten vanuit een werkmap:** zet in de werkmap een `.bat` (bijv. `start_app.bat`) met één regel, met het
-  pad naar je repository:
-
-  ```bat
-  @call "C:\MyPrograms\GitHub\AHNProfielCreator\start_app.bat" "%~dp0."
-  ```
-
-  Een dubbelklik opent de app met die map als werkmap, met de projecten daarin; de code komt uit de
-  repository. `%~dp0.` is de map van het `.bat`-bestand, waar het ook gestart wordt.
+- **Andere werkmap eenmalig:** sleep de map op `start_app.bat`, of `start_app.bat pad\naar\werkmap`.
 - Andere conda-omgeving: pas `AHN_ENV` bovenin `start_app.bat` aan (of zet de omgevingsvariabele `AHN_ENV`).
 
 Zonder het `.bat`-bestand, in een geactiveerde omgeving:
