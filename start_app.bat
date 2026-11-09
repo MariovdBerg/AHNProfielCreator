@@ -15,7 +15,7 @@ rem ----------------------------------------------------------------------------
 rem Een map is de werkmap, een bestand de config.ini van een project.
 set "ARGS="
 if not "%~1"=="" (
-    if exist "%~f1\*" (set ARGS=--werkmap "%~f1") else (set ARGS=--config "%~f1")
+    if exist "%~f1\*" (set ARGS=--werkmap "%~f1\.") else (set ARGS=--config "%~f1")
 )
 
 cd /d "%~dp0"

@@ -147,7 +147,8 @@ uitvoer en de instellingen:
 ```
 
 - **Werkmap:** standaard de map waarin je de app start. `start_app.bat` start in de ontwikkelmap (de map met
-  `src`), zodat `demo` daar een van de projecten is.
+  `src`), zodat `demo` daar een van de projecten is; een eigen werkmap kan een `.bat` krijgen dat ernaar
+  verwijst (zie [Webapp](#webapp)).
 - **Projectmap:** de map van het project, met de mappen `invoer` en `uitvoer`. Niet te verwarren met de
   git-projectmap waarin ontwikkeld wordt.
 - **Invoer:** relatieve paden in de instellingen gelden ten opzichte van `invoer`, bijv.
@@ -305,6 +306,15 @@ het venster of druk Ctrl+C.
 - **Ander project:** kies het in de app onder *Project*, of maak er een met *Nieuw project…* (maakt de mappen
   `invoer` en `uitvoer` en een volledige `config.ini` met de standaardwaarden). Of sleep de `config.ini` van een project op `start_app.bat`.
 - **Andere werkmap:** sleep de map op `start_app.bat`, of `start_app.bat pad\naar\werkmap`.
+- **Starten vanuit een werkmap:** zet in de werkmap een `.bat` (bijv. `start_app.bat`) met één regel, met het
+  pad naar je repository:
+
+  ```bat
+  @call "C:\MyPrograms\GitHub\AHNProfielCreator\start_app.bat" "%~dp0."
+  ```
+
+  Een dubbelklik opent de app met die map als werkmap, met de projecten daarin; de code komt uit de
+  repository. `%~dp0.` is de map van het `.bat`-bestand, waar het ook gestart wordt.
 - Andere conda-omgeving: pas `AHN_ENV` bovenin `start_app.bat` aan (of zet de omgevingsvariabele `AHN_ENV`).
 
 Zonder het `.bat`-bestand, in een geactiveerde omgeving:
