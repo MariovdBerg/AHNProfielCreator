@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ahnprofielcreator"
-version = "2.1.0"
+version = "2.2.0"
 description = "Genereer AHN profielen (dwarslijnen met hoogtes) langs een traject, per dijkvak"
 readme = "README.md"
 license = "EUPL-1.2"
