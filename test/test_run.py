@@ -75,6 +75,41 @@ def test_run_rejects_other_crs_before_writing(tmp_path, fake_tiles):
     assert not (tmp_path / "uit").exists()
 
 
+def test_run_requires_vak_and_traject_attributes(tmp_path, fake_tiles):
+    dijk = write_lines(tmp_path / "dijk.shp", [(LineString([(0, 50), (100, 50)]), {"vak": "A"})], {"vak": "str"})
+    with pytest.raises(
+        ValueError, match=r"'vak_id' \(vak, instelling group_id\) en 'traject' \(traject, instelling traject_id\)"
+    ):
+        ppv.run(settings(tmp_path, dijk))
+    assert not (tmp_path / "uit").exists()
+    with pytest.raises(ValueError, match=r"'traject' \(traject, instelling traject_id\)"):
+        ppv.make_points(settings(tmp_path, dijk, group_id="vak"))
+    with pytest.raises(ValueError, match="verschillende attributen"):
+        ppv.make_points(settings(tmp_path, dijk, group_id="vak", traject_id="vak"))
+
+
+def test_run_uses_traject_id_setting(tmp_path, fake_tiles):
+    dijk = write_lines(
+        tmp_path / "dijk.shp", [(LineString([(0, 50), (100, 50)]), {"vak_id": "A", "NORMTRAJ": "44-1"})],
+        {"vak_id": "str", "NORMTRAJ": "str"},
+    )
+    with pytest.raises(ValueError, match="'traject'"):
+        ppv.make_points(settings(tmp_path, dijk))
+    ppv.make_points(settings(tmp_path, dijk, traject_id="NORMTRAJ"))
+
+
+def test_run_requires_values_for_vak_and_traject(tmp_path, fake_tiles):
+    dijk = write_lines(
+        tmp_path / "dijk.shp",
+        [(LineString([(0, 50), (100, 50)]), {"vak_id": "A", "traject": "44-1"}),
+         (LineString([(0, 60), (100, 60)]), {"vak_id": "B", "traject": " "}),
+         (LineString([(0, 70), (100, 70)]), {"vak_id": None, "traject": "44-1"})],
+        {"vak_id": "str", "traject": "str"},
+    )
+    with pytest.raises(ValueError, match=r"'vak_id' \(feature 2\); 'traject' \(feature 1\)"):
+        ppv.run(settings(tmp_path, dijk))
+
+
 def test_run_checks_outside_line_crs(tmp_path, dijk_noord, fake_tiles):
     buiten = write_lines(tmp_path / "buiten.shp", [(LineString([(0, 55), (100, 55)]), {"vak_id": "A"})], crs=None)
     with pytest.raises(ValueError, match="Buitenlijn .* geen coördinatenstelsel"):

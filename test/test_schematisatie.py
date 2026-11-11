@@ -198,7 +198,13 @@ def test_traject():
 
 def test_profiel_id():
     assert schematisatie.profiel_id({"vak": "DV 01", "traject": "44-1"}) == "44-1_DV_01"
-    assert schematisatie.profiel_id({"vak": "DV_01", "traject": None}) == "DV_01"  # Zonder traject alleen het vak
+    with pytest.raises(ValueError, match="geen traject"):
+        schematisatie.profiel_id({"vak": "DV_01", "traject": None})
+
+
+def test_check_trajecten_requires_traject():
+    with pytest.raises(ValueError, match="Zonder traject: B"):
+        schematisatie.check_trajecten({"A": [{"traject": "44-1"}], "B": [{"traject": " "}]}, "traject")
 
 
 def test_file_name():
@@ -302,6 +308,19 @@ def test_schematise_stops_for_vak_in_more_trajecten(dike_settings):
     with pytest.raises(ValueError, match=r"vak A \(44-1, 43-6\)"):
         ppv.schematise(dike_settings)
     assert not os.path.exists(dike_settings.output_prfl_dir)
+
+
+def test_schematise_uses_traject_id_setting(dike_settings, tmp_path):
+    dike_settings.input_line = write_lines(
+        tmp_path / "dijk_nt.shp",
+        [(shapely.geometry.LineString([(10, 50), (90, 50)]), {"vak_id": "A", "NT": "43-6"})],
+        properties={"vak_id": "str", "NT": "str"},
+    )
+    dike_settings.traject_id = "NT"
+    ppv.run(dike_settings)
+    (result,) = ppv.schematise(dike_settings)
+    profiel = prflcheck.Profiel.from_file(os.path.join(dike_settings.output_prfl_dir, "A.prfl"))
+    assert result["traject"] == "43-6" and profiel.id == "43-6_A"
 
 
 def test_schematise_removes_previous_files(dike_settings):

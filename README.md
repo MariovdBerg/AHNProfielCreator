@@ -158,7 +158,7 @@ Wat je aanlevert, in het kort:
 
 | Invoer | Verplicht | Instelling |
 |---|---|---|
-| Dijkvakken: lijnen, één per vak | ja | `input_line`, `group_id` |
+| Dijkvakken: lijnen, één per vak, met een vak- en een traject-attribuut | ja | `input_line`, `group_id`, `traject_id` |
 | Buitenlijn: geeft aan welke kant buiten ligt | nee, maar nodig voor de richting van de dwarslijnen en voor het schematiseren; kan ook afgeleid worden | `input_line_outside` of `outside_offset` + `outside_side` |
 | AHN-tiffs: lokale map; ontbrekende bladen worden gedownload | ja (een map) | `ahn_file_loc`, `ahn_file_downloaded` |
 | Project: map met `invoer` en `uitvoer` | ja | de map van `config.ini`, of `projectmap` |
@@ -169,9 +169,10 @@ Eén shapefile (`input_line`) met de dijklijn, opgedeeld in dijkvakken:
 
 - **Geometrie:** `LineString` of `MultiLineString`. Gesloten ringen en vakken uit meerdere delen mogen.
   Andere geometrieën (punten, vlakken) worden overgeslagen.
-- **Traject-attribuut:** het attribuut `traject`, het (norm)traject van het vak.
-- **Vak-attribuut:** het attribuut `group_id` (standaard `vak_id`) moet bestaan en uniek zijn: één feature per
-  vak.
+- **Traject-attribuut (verplicht):** het attribuut `traject_id` (standaard `traject`), het (norm)traject van het
+  vak, moet bestaan en voor elk vak ingevuld zijn.
+- **Vak-attribuut (verplicht):** het attribuut `group_id` (standaard `vak_id`) moet bestaan, ingevuld en uniek
+  zijn: één feature per vak.
 - **Coördinaten:** RD New (EPSG:28992, of RD + NAP, EPSG:7415), met een `.prj`-bestand. Een ander stelsel of een
   ontbrekende `.prj` geeft een foutmelding en er wordt niets berekend. Herprojecteer het bestand dan eerst, bijv.
   in QGIS (*Vector › Data Management Tools › Reproject Layer*), of ken RD New toe als de coördinaten al in RD
@@ -270,6 +271,7 @@ van `config.ini`.
 | `projectmap` | de map van `config.ini` | projectmap met `invoer` en `uitvoer`; alleen nodig vanuit Python of met `--projectmap` |
 | `input_line` | (verplicht) | shapefile met de dijkvakken |
 | `group_id` | `vak_id` | vak-attribuut in de dijkvakken (en eventueel de buitenlijn) |
+| `traject_id` | `traject` | traject-attribuut in de dijkvakken |
 | `input_line_outside` | leeg | shapefile met de buitenlijn |
 | `outside_offset` | leeg (= niet afleiden) | [m] zonder buitenlijn: leid die af door de dijkvakken zoveel te verschuiven |
 | `outside_side` | `links` | kant van de afgeleide buitenlijn t.o.v. de tekenrichting: `links` of `rechts` |
@@ -379,6 +381,7 @@ settings = Settings(
     input_line_outside="buitenlijn.shp",  # of: None en outside_offset=20 om de buitenlijn af te leiden
     outside_side="links",
     group_id="vak_id",
+    traject_id="traject",
     ahn_file_loc=r"D:\AHN",  # AHN-map met lokale tiffs in AHN5\DTM05 enz.
     ahn_file_downloaded=None,  # map voor downloads; None = <werkmap>\ahn_data
     ahn_versie=5,  # standaard; terugval op AHN4
@@ -486,7 +489,7 @@ Nederlandse Excel; in pandas: `sep=";", decimal=","`):
 | Kolom | Betekenis |
 |---|---|
 | `vak`, `bestand` | vak en naam van het `.prfl`-bestand |
-| `traject` | (norm)traject uit het attribuut `traject` van de dijkvakken; leeg als dat attribuut ontbreekt. Een vak moet in één traject liggen: zijn het er meer, dan stopt het schematiseren met een foutmelding |
+| `traject` | (norm)traject uit het traject-attribuut (`traject_id`) van de dijkvakken. Een vak moet in één traject liggen: zijn het er meer, dan stopt het schematiseren met een foutmelding |
 | `n_profielen` | aantal AHN-profielen in het vak |
 | `kruinhoogte` | [m NAP] kruinhoogte in het `.prfl` |
 | `richting` | [graden t.o.v. noord] gemiddelde dijknormaal naar buiten |

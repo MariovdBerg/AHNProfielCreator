@@ -12,6 +12,7 @@ import shapely.geometry
 
 CRS = "EPSG:28992"
 NODATA_TIF = -9999.0
+TRAJECT = "44-1"  # Traject van de synthetische dijkvakken
 
 
 @pytest.fixture(autouse=True)
@@ -31,8 +32,14 @@ def logs(caplog):
 
 
 def write_lines(path, rows, properties=None, crs=CRS):
-    """Schrijf (geometrie, attributen)-paren als lijnen-shapefile; geometrie None = null-geometrie."""
-    properties = properties or {"vak_id": "str"}
+    """
+    Schrijf (geometrie, attributen)-paren als lijnen-shapefile; geometrie None = null-geometrie.
+
+    Zonder `properties` krijgt het bestand de attributen vak_id en traject (standaard traject TRAJECT).
+    """
+    if properties is None:
+        properties = {"vak_id": "str", "traject": "str"}
+        rows = [(geom, {"traject": TRAJECT, **props}) for geom, props in rows]
     schema = {"geometry": "LineString", "properties": properties}
     with fiona.open(path, "w", "ESRI Shapefile", schema, crs=crs) as sink:
         for geom, props in rows:

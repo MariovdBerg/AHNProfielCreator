@@ -36,19 +36,22 @@ from .profielen.constants import DEFAULT_CROSS_ID, NODATA
 PRFLCHECK_URL = schem_cross.PRFLCHECK_URL
 import_prflcheck = schem_cross.laad_prflcheck
 
-TRAJECT_FIELD = "traject"  # Attribuut van de dijkvakken met het (norm)traject; optioneel
 
-
-def read_profiles(path, group_id):
+def read_profiles(path, group_id, traject_id):
     """
     Lees de AHN-dwarslijnen per vak als (d, z): afstand tot de dijklijn (negatief = beginzijde) en hoogte.
 
     Geeft per vak een lijst met dicts met 'id', 'd', 'z' (NaN zonder hoogte), 'angle' (richting naar buiten) en
-    'traject' (attribuut `TRAJECT_FIELD`, hoofdletterongevoelig; None als dat ontbreekt).
+    'traject' (attribuut `traject_id`). Fout (ValueError) als dat attribuut ontbreekt.
     """
     profiles = collections.OrderedDict()
     with fiona.open(path) as source:
-        traject_field = next((k for k in source.schema["properties"] if k.lower() == TRAJECT_FIELD), None)
+        if traject_id not in source.schema["properties"]:
+            raise ValueError(
+                f"Attribuut '{traject_id}' (traject_id) ontbreekt in de AHN-profielen '{path}'; het is nodig voor het "
+                "ID van het .prfl ({traject}_{vak}). Controleer de dijkvakken en de instelling traject_id en reken "
+                "opnieuw."
+            )
         for row in source:
             if row is None or row.geometry is None:
                 continue
@@ -62,7 +65,7 @@ def read_profiles(path, group_id):
             profiles.setdefault(str(props[group_id]), []).append(
                 {
                     "id": props.get(DEFAULT_CROSS_ID), "d": d, "z": z, "angle": props.get("angle"),
-                    "traject": props.get(traject_field) if traject_field else None,
+                    "traject": props.get(traject_id),
                 }
             )
     return profiles
@@ -80,13 +83,19 @@ def traject(profiles):
     return ", ".join(trajecten(profiles)) or None
 
 
-def check_trajecten(profiles):
-    """Fout (ValueError) als een vak in meer dan één traject ligt; noemt alle vakken waarvoor dat geldt."""
+def check_trajecten(profiles, traject_id):
+    """Fout (ValueError) als een vak geen traject heeft of in meer dan één traject ligt; noemt alle vakken."""
+    zonder = [vak for vak, p in profiles.items() if not trajecten(p)]
+    if zonder:
+        raise ValueError(
+            f"Elk vak heeft een traject nodig voor het ID van het .prfl ({{traject}}_{{vak}}); vul het attribuut "
+            f"'{traject_id}' van de dijkvakken in. Zonder traject: " + ", ".join(zonder)
+        )
     fout = {vak: names for vak, names in ((v, trajecten(p)) for v, p in profiles.items()) if len(names) > 1}
     if fout:
         raise ValueError(
             "Een vak hoort in één traject te liggen; controleer het attribuut "
-            f"'{TRAJECT_FIELD}' van de dijkvakken. In meerdere trajecten: "
+            f"'{traject_id}' van de dijkvakken. In meerdere trajecten: "
             + "; ".join(f"vak {vak} ({', '.join(names)})" for vak, names in fout.items())
         )
 
@@ -107,9 +116,10 @@ def file_name(vak):
 
 
 def profiel_id(result):
-    """ID in het .prfl: '{traject}_{vak}', of alleen het vak zonder traject; witruimte wordt '_'."""
-    name = f"{result['traject']}_{result['vak']}" if result.get("traject") else str(result["vak"])
-    return re.sub(r"\s+", "_", name.strip())
+    """ID in het .prfl: '{traject}_{vak}'; witruimte wordt '_'. Fout (ValueError) zonder traject."""
+    if not result.get("traject"):
+        raise ValueError(f"Vak {result['vak']} heeft geen traject")
+    return re.sub(r"\s+", "_", f"{result['traject']}_{result['vak']}".strip())
 
 
 def fit_instellingen(settings):
@@ -223,8 +233,8 @@ def schematise(settings, logger):
         )
     schem_cross.hydra_grenzen(fit_instellingen(settings))  # Onmogelijke instellingen meteen melden, niet per vak
 
-    profiles = read_profiles(settings.output_cross_ahn, settings.group_id)
-    check_trajecten(profiles)  # Vóór het opruimen, zodat de vorige schematisatie blijft staan
+    profiles = read_profiles(settings.output_cross_ahn, settings.group_id, settings.traject_id)
+    check_trajecten(profiles, settings.traject_id)  # Vóór het opruimen, zodat de vorige schematisatie blijft staan
     out_dir = settings.output_prfl_dir
     os.makedirs(out_dir, exist_ok=True)
     remove_previous(settings)

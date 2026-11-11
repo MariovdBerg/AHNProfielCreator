@@ -40,7 +40,7 @@ from .profielen import CrossSectionHeights, CrossSections
 class Settings:
     # Projectmap met de mappen invoer en uitvoer; relatieve invoerpaden gelden t.o.v. invoer
     projectmap: str
-    # Shapefile met dijkvak lijnen (bevat attribuut `group_id`)
+    # Shapefile met dijkvak lijnen (bevat de attributen `group_id` en `traject_id`)
     input_line: str
     # AHN-map met per versie en product een map met lokale tiffs, bijv. <ahn_file_loc>/AHN5/DTM05
     ahn_file_loc: str
@@ -50,6 +50,7 @@ class Settings:
     outside_offset: float = 0.0
     outside_side: str = "links"  # Kant van de buitenlijn t.o.v. de lijnrichting: links of rechts
     group_id: str = "vak_id"  # Attribuut in shape om te groeperen
+    traject_id: str = "traject"  # Attribuut in shape met het (norm)traject; ID in .prfl = {traject}_{vak}
     # Nodige AHN informatie
     ahn_file_downloaded: Optional[str] = None  # Map voor gedownloade bladen; standaard <werkmap>/ahn_data
     ahn_index: str = ahn.DEFAULT_INDEX  # Kaartbladen met downloadlinks (bladwijzer.gpkg van AHN)
@@ -245,9 +246,47 @@ def check_crs(path, label):
         )
 
 
+def check_dijkvakken(path, group_id, traject_id):
+    """
+    Controleer de attributen van de dijkvakken: vak (`group_id`) en traject (`traject_id`) moeten bestaan en per
+    lijn ingevuld zijn; samen vormen ze het ID van het .prfl ({traject}_{vak}). Fout (ValueError) met alle
+    ontbrekende attributen en lijnen zonder waarde.
+    """
+    if group_id == traject_id:
+        raise ValueError(f"group_id en traject_id moeten verschillende attributen zijn (nu beide '{group_id}').")
+    with fiona.open(path) as source:
+        fields = source.schema["properties"]
+        missing = [
+            f"'{field}' ({label}, instelling {setting})"
+            for field, label, setting in ((group_id, "vak", "group_id"), (traject_id, "traject", "traject_id"))
+            if field not in fields
+        ]
+        if missing:
+            raise ValueError(
+                f"Dijkvakken '{path}' missen attribuut {' en '.join(missing)}. Het ID van het .prfl is "
+                f"{{traject}}_{{vak}}; voeg de attributen toe (bijv. in QGIS) of pas de instellingen aan. "
+                f"Aanwezig: {', '.join(fields) or 'geen'}."
+            )
+        empty = {group_id: [], traject_id: []}
+        for i, row in enumerate(source):
+            if row is None or row.geometry is None or row.geometry.type not in ("LineString", "MultiLineString"):
+                continue
+            for field in empty:
+                if row.properties[field] is None or str(row.properties[field]).strip() == "":
+                    empty[field].append(str(i))
+    empty = {name: rows for name, rows in empty.items() if rows}
+    if empty:
+        raise ValueError(
+            f"Dijkvakken '{path}' hebben lijnen zonder waarde voor "
+            + "; ".join(f"'{name}' (feature {', '.join(rows)})" for name, rows in empty.items())
+            + ". Elk vak heeft een vak en een traject nodig voor het ID van het .prfl ({traject}_{vak})."
+        )
+
+
 def check_input_crs(settings):
-    """Controleer het coördinatenstelsel van de dijkvakken en (als opgegeven) de buitenlijn."""
+    """Controleer het coördinatenstelsel en de attributen van de dijkvakken en (als opgegeven) de buitenlijn."""
     check_crs(settings.input_line, "Dijkvakken")
+    check_dijkvakken(settings.input_line, settings.group_id, settings.traject_id)
     if settings.input_line_outside:
         check_crs(settings.input_line_outside, "Buitenlijn")
 
@@ -315,6 +354,7 @@ def make_points(settings, logger=None):
     """Stap 1: intervalpunten langs de dijkvakken."""
     logger = logger or get_logger()
     check_crs(settings.input_line, "Dijkvakken")
+    check_dijkvakken(settings.input_line, settings.group_id, settings.traject_id)
     os.makedirs(settings.output_dir, exist_ok=True)
     cs = CrossSections(settings.input_line, settings.output_points, group_id=settings.group_id, logger=logger)
     logger.info(f"Stap 1/3: intervalpunten om de {settings.interval_length:g} m...")
@@ -427,6 +467,7 @@ CONFIG_LAYOUT = (
         {
             "input_line": "Shapefile met de dijkvakken (lijnen in RD New), één feature per vak",
             "group_id": "Attribuut in de dijkvakken (en eventueel de buitenlijn) met de naam van het vak",
+            "traject_id": "Attribuut in de dijkvakken met het (norm)traject; ID in het .prfl = {traject}_{vak}",
             "input_line_outside": "Shapefile met de buitenlijn (bepaalt welke kant buiten ligt); leeg = geen of afleiden",
             "outside_offset": "[m] zonder buitenlijn: leid die af door de dijkvakken zoveel te verschuiven "
             "(kleiner dan de halve cross_length); 0 = niet afleiden",
@@ -541,6 +582,7 @@ def parse_args(argv=None):
         help="kant van de afgeleide buitenlijn t.o.v. de lijnrichting (standaard: links)",
     )
     parser.add_argument("--group-id", help="attribuut in shape om te groeperen (standaard: vak_id)")
+    parser.add_argument("--traject-id", help="attribuut in shape met het traject (standaard: traject)")
     parser.add_argument("--ahn-index", help="AHN kaartbladen met downloadlinks (standaard: bladwijzer.gpkg)")
     parser.add_argument("--ahn-index-id", help="attribuut met bladnaam in de kaartbladen (standaard: AHN)")
     parser.add_argument("--ahn-file-loc", help="AHN-map met submappen AHN<versie>/<product>, bijv. AHN5/DTM05, met de tiffs")

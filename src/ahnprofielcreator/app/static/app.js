@@ -15,6 +15,7 @@ const LABELS = {
   model: "AHN model",
   model_resolutie: "AHN resolutie [m]",
   group_id: "Attribuut vak-id",
+  traject_id: "Attribuut traject",
   interval_length: "Interval [m]",
   cross_length: "Lengte dwarslijn [m]",
   ahn_stepsize: "Stapgrootte AHN [m]",
@@ -36,7 +37,7 @@ const LABELS = {
 const GROUPS = {
   bronnen: ["input_line", "input_line_outside", "outside_offset", "outside_side", "ahn_index", "ahn_file_loc", "ahn_file_downloaded"],
   ahn: ["ahn_index_id", "ahn_versie", "model", "model_resolutie"],
-  dwarslijnen: ["group_id", "interval_length", "cross_length", "ahn_stepsize"],
+  dwarslijnen: ["group_id", "traject_id", "interval_length", "cross_length", "ahn_stepsize"],
   schematisatie: [
     "schem_kwantiel", "schem_kruin_zoekafstand", "schem_ruwheid", "schem_voorland",
     "schem_min_bermbreedte", "schem_min_taludhoogte", "schem_berm_winst_rel", "schem_berm_winst_abs",
