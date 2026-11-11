@@ -1,6 +1,7 @@
 """AHN-kaartbladen: veldnamen, lokaal zoeken, downloaden en de AHN6-melding (zonder netwerk)."""
 
 import io
+import os
 import re
 import ssl
 import urllib.error
@@ -64,63 +65,61 @@ def test_product_folder(tmp_path):
 
 
 def test_check_folder_ok(tmp_path):
-    make_files(
-        tmp_path, "leesmij.txt", "AHN4/DTM05/M_01CZ1.TIF", "ahn5/dsm5/2023_R5_01CZ1.TIF", "AHN5/DTM05/leesmij.txt"
-    )
-    (tmp_path / "AHN6" / "DTM5").mkdir(parents=True)
-    ahn.check_folder(str(tmp_path))  # Geen fout
+    # Wat verder in de AHN-map staat (losse tiffs, andere mappen), maakt niet uit.
+    make_files(tmp_path, "M_01CZ1.TIF", "oud/x.TIF", "AHN7/y.TIF", "ahn5/dtm05/blok1/2023_M_01CZ1.TIF")
+    assert ahn.check_folder(str(tmp_path), 5, "DTM", 0.5) is None
 
 
-@pytest.mark.parametrize(
-    "paths, text",
-    [
-        (["M_01CZ1.TIF"], "tiffs direct in de map (M_01CZ1.TIF)"),
-        (["AHN4/M_01CZ1.tif"], "tiffs direct in AHN4 (M_01CZ1.tif)"),
-        (["oud/M_01CZ1.TIF"], "onbekende mappen direct in de map (oud; verwacht AHN1 t/m AHN6)"),
-        (["AHN7/DTM05/x.TIF"], "onbekende mappen direct in de map (AHN7;"),
-        (["AHN5/DTM_05/x.TIF"], "onbekende mappen direct in AHN5 (DTM_05; verwacht DSM05, DSM5, DTM05 of DTM5)"),
-    ],
-)
-def test_check_folder_errors(tmp_path, paths, text):
-    make_files(tmp_path, *paths)
-    with pytest.raises(ValueError, match="heeft niet de verwachte opbouw") as error:
-        ahn.check_folder(str(tmp_path), "AHN-map (ahn_file_loc)")
+def test_check_folder_warns_without_product_folder(tmp_path):
+    make_files(tmp_path, "AHN5/DSM05/2023_R_01CZ1.TIF")
+    warning = ahn.check_folder(str(tmp_path), 5, "DTM", 0.5, "AHN-map (ahn_file_loc)")
+    assert warning.startswith(f"AHN-map (ahn_file_loc) '{tmp_path}' heeft geen map '{os.path.join('AHN5', 'DTM05')}'")
+    assert "waarschijnlijk" not in warning
+
+
+@pytest.mark.parametrize("sub", ["AHN5/DTM05", "AHN5", "ahn4/dtm05", "AHN5/DSM5"])
+def test_check_folder_error_for_version_or_product_folder(tmp_path, sub):
+    # ahn_file_loc wijst naar een productmap (of versiemap) zelf: fout, anders worden alle bladen gedownload.
+    make_files(tmp_path, f"{sub}/2023_M_01CZ1.TIF")
+    with pytest.raises(ValueError, match="lijkt zelf een versie- of productmap") as error:
+        ahn.check_folder(str(tmp_path / sub), 5, "DTM", 0.5, "AHN-map (ahn_file_loc)")
     message = str(error.value)
-    assert text in message
-    assert message.startswith(f"AHN-map (ahn_file_loc) '{tmp_path}'")
-    assert "AHN1 t/m AHN6" in message and "DSM05, DSM5, DTM05, DTM5" in message
+    assert message.startswith("AHN-map (ahn_file_loc)")
+    assert f"hier waarschijnlijk '{tmp_path}'" in message
+    assert os.path.join("<AHN-map>", "AHN5", "DTM05") in message
 
 
-def test_check_folder_lists_at_most_five(tmp_path):
-    make_files(tmp_path, *[f"{i}.tif" for i in range(7)])
-    with pytest.raises(ValueError, match=re.escape("(0.tif, 1.tif, 2.tif, 3.tif, 4.tif en nog 2)")):
-        ahn.check_folder(str(tmp_path))
+def test_check_folder_error_for_product_folder_without_version(tmp_path):
+    make_files(tmp_path, "DTM05/2023_M_01CZ1.TIF")
+    with pytest.raises(ValueError, match="lijkt zelf een versie- of productmap") as error:
+        ahn.check_folder(str(tmp_path / "DTM05"), 5, "DTM", 0.5)
+    assert "waarschijnlijk" not in str(error.value)  # Geen versiemap erboven: geen suggestie
 
 
-@pytest.mark.parametrize("sub", ["AHN5/DTM05", "AHN5"])
-def test_check_folder_names_root_for_old_layout(tmp_path, sub):
-    # Oude opbouw: ahn_file_loc wees naar de productmap (of een versiemap) zelf.
-    make_files(tmp_path, "AHN5/DTM05/2023_M_01CZ1.TIF")
-    with pytest.raises(ValueError, match=re.escape(f"hier waarschijnlijk '{tmp_path}'")) as error:
-        ahn.check_folder(str(tmp_path / sub))
-    assert f"bijv. '{tmp_path / 'AHN5' / 'DTM05' / '2023_M_01CZ1.TIF'}'" in str(error.value)
+def test_check_folder_accepts_version_named_root_with_layout(tmp_path):
+    # Heet de AHN-map toevallig zelf 'AHN5' maar heeft die de juiste opbouw, dan is er niets aan de hand.
+    make_files(tmp_path, "AHN5/AHN5/DTM05/2023_M_01CZ1.TIF")
+    assert ahn.check_folder(str(tmp_path / "AHN5"), 5, "DTM", 0.5) is None
 
 
 def test_check_folder_missing(tmp_path):
     with pytest.raises(FileNotFoundError, match="bestaat niet"):
-        ahn.check_folder(str(tmp_path / "geen"))
+        ahn.check_folder(str(tmp_path / "geen"), 5, "DTM", 0.5)
 
 
-def test_tiles_check_folders(tmp_path):
-    make_files(tmp_path, "ahn/M_01CZ1.TIF", "downloads/M_01CZ2.TIF", "goed/AHN4/DTM05/M_01CZ1.TIF")
-    with pytest.raises(ValueError, match=re.escape("AHN-map (ahn_file_loc)")):
-        ahn.AHNTiles(str(tmp_path / "ahn"))
-    with pytest.raises(ValueError, match=re.escape("AHN-downloadmap (ahn_file_downloaded)")):
-        ahn.AHNTiles(str(tmp_path / "goed"), download_folder=str(tmp_path / "downloads"))
+def test_tiles_check_folders(tmp_path, logs):
+    make_files(tmp_path, "ahn/M_01CZ1.TIF", "downloads/M_01CZ2.TIF", "goed/AHN5/DTM05/2023_M_01CZ1.TIF")
     with pytest.raises(FileNotFoundError):
         ahn.AHNTiles(str(tmp_path / "geen"))
+    with pytest.raises(ValueError, match=re.escape("AHN-map (ahn_file_loc)")):
+        ahn.AHNTiles(str(tmp_path / "goed" / "AHN5" / "DTM05"))
+    # Geen strikte opbouw meer: geen fout, wel een waarschuwing als AHN5/DTM05 ontbreekt.
+    ahn.AHNTiles(str(tmp_path / "ahn"), download_folder=str(tmp_path / "downloads"))
+    assert any("heeft geen map" in m for m in logs())
+    n = len(logs())
     # Een downloadmap die nog niet bestaat, mag: die wordt bij de eerste download gemaakt.
     ahn.AHNTiles(str(tmp_path / "goed"), download_folder=str(tmp_path / "nieuw"))
+    assert len(logs()) == n
 
 
 # ---------- Lokaal zoeken ----------
@@ -143,6 +142,30 @@ def test_local_file(tiles):
     # Alleen in de map van de versie: AHN3 heeft dezelfde bestandsnamen als AHN4.
     assert t._local_file("M_01CZ1.TIF", 3) is None
     assert t._local_file("M_01CZ1.TIF", 5) is None
+
+
+def test_local_file_in_subfolders(tmp_path):
+    folder = make_files(
+        tmp_path,
+        "AHN5/DTM05/blok1/2023_M_01CZ1.TIF",
+        "AHN5/DTM05/blok2/sub/2023_M_01CZ2.TIF",
+        "AHN5/DTM05/b/2023_M_01CZ3.TIF",
+        "AHN5/DTM05/a/2023_M_01CZ3.TIF",  # Zelfde naam, zelfde diepte: eerste op alfabet
+        "AHN5/DTM05/x/y/2023_M_01CZ4.TIF",
+        "AHN5/DTM05/z/2023_M_01CZ4.TIF",  # Minst diep wint
+        "AHN5/DTM05/blok1/leesmij.txt",
+        "AHN4/DTM05/oud/M_01CZ1.TIF",
+        "AHN5/DSM05/2023_R_01CZ1.TIF",
+    )
+    t = ahn.AHNTiles(str(folder))
+    ahn5 = folder / "AHN5" / "DTM05"
+    assert t._local_file("2023_M_01CZ1.TIF", 5) == str(ahn5 / "blok1" / "2023_M_01CZ1.TIF")
+    assert t._local_file("2023_M_01CZ2.TIF", 5) == str(ahn5 / "blok2" / "sub" / "2023_M_01CZ2.TIF")
+    assert t._local_file("2023_M_01CZ3.TIF", 5) == str(ahn5 / "a" / "2023_M_01CZ3.TIF")
+    assert t._local_file("2023_M_01CZ4.TIF", 5) == str(ahn5 / "z" / "2023_M_01CZ4.TIF")
+    # Terugval op AHN4 zoekt alleen in AHN4/DTM05 (ook in submappen), niet in de map van AHN5 of een ander product.
+    assert t._local_file("M_01CZ1.TIF", 4) == str(folder / "AHN4" / "DTM05" / "oud" / "M_01CZ1.TIF")
+    assert t._local_file("M_01CZ1.TIF", 3) is None
 
 
 def test_sheet_names_and_fallback(tiles, monkeypatch):
@@ -263,6 +286,14 @@ def test_local_file_needs_no_download(tiles, web):
     assert web.requests == []
     # Geen AHN5 lokaal of online, wel AHN4 lokaal (M_01CZ1_DEFLATE.tif): alleen AHN5 wordt geprobeerd.
     assert t.file("01CZ1") == str(folder / "AHN4" / "DTM05" / "M_01CZ1_DEFLATE.tif")
+    assert web.requests == ["https://x/AHN5/2023_M_01CZ1.TIF"]
+
+
+def test_fallback_to_local_ahn4_in_subfolder(tmp_path, web):
+    folder = make_files(tmp_path, "AHN4/DTM05/deel/M_01CZ1.TIF", "AHN3/DTM05/M_01CZ1.TIF")
+    t = ahn.AHNTiles(str(folder))
+    t.sheets["01CZ1"] = (None, {5: "https://x/AHN5/2023_M_01CZ1.TIF", 4: "https://x/AHN4/M_01CZ1.zip"})
+    assert t.file("01CZ1") == str(folder / "AHN4" / "DTM05" / "deel" / "M_01CZ1.TIF")  # Niet die van AHN3
     assert web.requests == ["https://x/AHN5/2023_M_01CZ1.TIF"]
 
 

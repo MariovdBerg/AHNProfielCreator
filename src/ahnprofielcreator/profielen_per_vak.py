@@ -477,7 +477,7 @@ CONFIG_LAYOUT = (
     (
         "AHN",
         {
-            "ahn_file_loc": "AHN-map met een map per versie en product met de tiffs, bijv. D:\\AHN met "
+            "ahn_file_loc": "AHN-map; de tiffs staan in <map>\\AHN<versie>\\<product> (ook in submappen), bijv. D:\\AHN met "
             "D:\\AHN\\AHN5\\DTM05; versiemappen AHN1 - AHN6, productmappen DSM05, DSM5, DTM05, DTM5",
             "ahn_file_downloaded": "Map voor gedownloade kaartbladen (~200 MB per blad bij 0,5 m), ook hier wordt gezocht; "
             f"..\\..\\{DOWNLOAD_DIR} = {DOWNLOAD_DIR} in de werkmap, gedeeld door alle projecten",

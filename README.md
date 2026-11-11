@@ -209,8 +209,8 @@ punten in rood.
 
 De hoogtes worden uit **lokale** AHN GeoTIFF's gelezen. Ontbrekende kaartbladen downloadt de app zelf.
 
-1. **AHN-map** (`ahn_file_loc`): hier zoekt de app de tiffs, bijv. `D:\AHN`. De AHN-map heeft een vaste
-   opbouw (zie hieronder).
+1. **AHN-map** (`ahn_file_loc`): hier zoekt de app de tiffs, bijv. `D:\AHN`. De tiffs staan in de map
+   `AHN<versie>\<product>` (zie hieronder).
 2. **Map voor downloads** (`ahn_file_downloaded`, optioneel): hier komen gedownloade bladen en hier wordt ook
    gezocht, met dezelfde opbouw. Leeg = `ahn_data` in de werkmap, zodat alle projecten dezelfde downloads
    gebruiken.
@@ -229,7 +229,9 @@ Welke AHN-data gebruikt wordt, kies je zelf:
 | `model_resolutie` | `0.5` | `0.5` of `5` [m] |
 
 **Opbouw van de AHN-map.** Per AHN-versie een map (`AHN1` t/m `AHN6`) en daarin per product een map:
-`DTM05`, `DTM5`, `DSM05` of `DSM5` (DTM/DSM, 0,5 m/5 m). De tiffs staan in de productmap:
+`DTM05`, `DTM5`, `DSM05` of `DSM5` (DTM/DSM, 0,5 m/5 m). De tiffs staan in de productmap, mag ook in
+submappen daarvan (bijv. `D:\AHN\AHN5\DTM05\blok1\2023_M_01CZ1.TIF`). Wat verder in de AHN-map staat,
+maakt niet uit:
 
 ```text
 D:\AHN\                      ahn_file_loc = D:\AHN
@@ -240,8 +242,12 @@ D:\AHN\                      ahn_file_loc = D:\AHN
    └─ DSM5\...
 ```
 
-De app kiest zelf de map bij `ahn_versie`, `model` en `model_resolutie`; bij terugval op AHN4 zoekt hij in
-`AHN4\<product>`. Gedownloade bladen uit een oudere versie van de app staan los in `ahn_data`: 
+De app kiest zelf de map bij `ahn_versie`, `model` en `model_resolutie`; bij terugval op AHN4 zoekt hij
+alleen in `AHN4\<product>` (en submappen), zodat AHN3- en AHN4-tiffs met dezelfde naam niet door elkaar
+raken. Wijst `ahn_file_loc` zelf naar een versie- of productmap (bijv. `D:\AHN\AHN5\DTM05` in plaats van
+`D:\AHN`), dan stopt de app met een foutmelding die de juiste AHN-map noemt. Ontbreekt alleen de map van de
+gekozen versie en product, dan meldt de app dat in de log en downloadt hij de bladen.
+Gedownloade bladen uit een oudere versie van de app staan los in `ahn_data`: 
 verplaats ze naar de juiste `AHN<versie>\<product>`-map of verwijder ze (ze worden dan opnieuw gedownload).
 
 **Let op!** AHN6 gebruikt bladen van 1 × 1 km en zit niet in `bladwijzer.gpkg`. Met `bladwijzer_AHN6.gpkg` (ook
