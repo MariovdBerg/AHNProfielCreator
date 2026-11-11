@@ -1,7 +1,8 @@
 # AHNProfielCreator
 
 Genereert AHN-hoogteprofielen dwars op een dijktraject, per dijkvak. Optioneel maakt de app per dijkvak één
-geschematiseerd profiel (`.prfl`) voor Hydra-NL/HydraRing.
+geschematiseerd profiel (`.prfl`) voor Hydra-NL/HydraRing. Er is een webapp om de invoer en uitvoer op een 
+kaart te bekijken en de berekening te starten. Rekenen kan ook vanaf de commandline of vanuit Python.
 
 ```
 dijkvakken (.shp) ─┬─> 1. buitenlijn          buitenlijn_offset.shp   (alleen als die afgeleid wordt)
@@ -11,8 +12,7 @@ AHN-tiffs ─────────┴─> 4. AHN-profielen       cross_lines_
                        5. schematiseren       prfl/<vak>.prfl         (optioneel)
 ```
 
-Er is een webapp om de invoer en uitvoer op een kaart te bekijken en de berekening te starten. Rekenen kan ook
-vanaf de commandline of vanuit Python.
+![](https://github.com/MariovdBerg/AHNProfielCreator/blob/develop/docs/example.png?raw=true)
 
 ## Inhoud
 
