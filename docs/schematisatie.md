@@ -16,6 +16,7 @@ beoordeling van het profiel.
    `schem_stap`, standaard 0,5 m) het kwantiel `schem_kwantiel` (standaard 0,2) van de AHN-hoogtes. Een laag
    kwantiel geeft een wat lager, voorzichtiger profiel. Waar minder dan de helft van de dwarslijnen een hoogte
    heeft (water), telt het niet mee.
+2. **ID:** Het `ID` van het profiel is `{traject}_{dijkvak}` (bijv. `44-1_DV_01`).
 2. **Kruin:** het hoogste punt van dat profiel binnen `schem_kruin_zoekafstand` (standaard 10 m) van de dijklijn.
    Ligt de dijklijn niet op of bij de kruin, vergroot dan deze afstand.
 3. **Fit van het profiel:** de buitenzijde tot de kruin wordt in één keer gefit als
